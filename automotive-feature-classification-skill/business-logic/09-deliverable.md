@@ -1,0 +1,64 @@
+# 09 — Deliverable
+
+The deliverable is the final artefact produced for one car. Its contents come from the harness (see `06-harness-interface.md`) plus the traceability blocks collected along the classification process.
+
+## Per-parameter record — fields the client requested
+
+Every parameter in the reference list produces exactly one record with the following fields:
+
+| Field               | Cardinality | Meaning                                                                                                                                                                                                                                                                                                                                      |
+| :------------------ | :---------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Category            | 1           | The category (functional area) of the parameter, from the CSV.                                                                                                                                                                                                                                                                               |
+| Parameter name      | 1           | The optimised name of the parameter, from the CSV.                                                                                                                                                                                                                                                                                           |
+| Schema type         | 1           | Which tiers (Basic / Medium / High) are defined by the CSV for this parameter — i.e. the applicable level set. See `06-harness-interface.md`.                                                                                                                                                                                                |
+| Presence            | 1           | Whether the parameter was found in the evidence: `Yes`, `No`, or `Disputed`. Always filled. Determined jointly with Status per the rules in `10-decision-rules.md`. `Disputed` is used only under Rule 2b. The former `No Information Found` value is retired (see `06-harness-interface.md` Invariant 8 and `11-assumptions.md` AS-HARN-A). |
+| Status              | 1           | Outcome of the assignment process: `Success`, `Conflict`, or `Unable to Decide`. Always filled. Corresponds to the decision rules in `10-decision-rules.md` (Rules 1, 4, 5 → `Success`; Rules 2a, 2b → `Conflict`; Rule 3 → `Unable to Decide`). `No Information Found` is retired.                                                          |
+| Classification      | 1           | The level assigned: `High`, `Medium`, `Basic`, or `Empty`. Always filled (may be `Empty`). Non-`Empty` **only when** Status = Success and Presence = Yes. When non-`Empty`, must be within the parameter's Schema type.                                                                                                                      |
+| Traceability blocks | 0..N        | Zero or more traceability blocks (definition below). At least one is required when Presence = Yes. Multiple blocks may support the same verdict.                                                                                                                                                                                             |
+
+Presence / Status / Classification together form the decision stack. Their allowed combinations are listed in the matrix in `06-harness-interface.md`.
+
+## Traceability block
+
+Each traceability block is the unit of evidence attached to a parameter record. A single parameter can carry multiple blocks. Each block has exactly these fields:
+
+| Field                        | Meaning                                                                                                                                                                                                                                                                                                                            |
+| :--------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Source name                  | Human-readable label of the source document (e.g. article title, brochure title).                                                                                                                                                                                                                                                  |
+| Source link                  | The original URL the source was retrieved from. Must correspond to a URL approved via the source approval store and ingested into the run's KB.                                                                                                                                                                                    |
+| Source justification         | Short prose. Explains why this source was used — i.e. why it is relevant, authoritative, or otherwise appropriate evidence for this parameter.                                                                                                                                                                                     |
+| Classification justification | Short prose. Explains why, based on the evidence in this source, the parameter is (or is not) placed at the reported level. When the parameter's Presence is `Yes` but Status is not `Success`, this field still describes what the source contributed to the decision (e.g. which level it hinted at before conflict resolution). |
+
+### Cardinality rules for traceability blocks
+
+Blocks are built only from **active sources** — clear or vague — for the parameter at hand (see source taxonomy in `10-decision-rules.md`). Silent sources never produce blocks.
+
+* **Status = Success, Presence = Yes.** At least one clear-source block. Additional clear or vague blocks may be attached when they reinforce the decision.
+* **Status = Success, Presence = No.** At least one clear-source block attesting explicit absence. (See Q-HARN-7 — the client may later prefer a different Status label for this case.)
+* **Status = Conflict (Rule 2a — level conflict, Presence = Yes).** At least **two** clear-source blocks must be attached — the blocks whose level conclusions created the conflict.
+* **Status = Conflict (Rule 2b — presence conflict, Presence = Disputed).** At least **two** clear-source blocks must be attached — one asserting presence, one asserting absence. No classification analysis is attempted; each block's *classification justification* simply records the presence stance of that source.
+* **Status = Unable to Decide.** At least one vague-source block. No clear-source block is attached (by definition — if there were a clear source, the Status would be Success or Conflict instead).
+* **Status = Success, Presence = No, silent-all case (Rule 4).** No blocks — by definition, there were no active sources for this parameter. Rule 4 and Rule 5 share the same output triple but differ in traceability: Rule 5 carries at least one clear-source block (explicit absence); Rule 4 carries none (silent absence). This is the only way a deliverable consumer can tell them apart.
+
+### Multiplicity is per classification, not per source
+
+A single source document can appear in multiple traceability blocks across different parameters. What identifies a block is the combination of (parameter, source) + the justifications it carries for that parameter. Reuse of the source URL across parameters is expected and allowed.
+
+## Serialisation format
+
+**OPEN — Q-DEL-1.** The client has specified the fields but not the file format (JSON, CSV, enriched CSV mirroring `artifacts/params.csv`, a Markdown / PDF report, or multiple outputs side-by-side). The field schema above is format-agnostic and will serialise cleanly into any of those.
+
+When Q-DEL-1 is resolved this section will fix:
+
+* the primary machine-readable format;
+* the optional human-readable format (if any);
+* the filename convention and per-run output directory.
+
+## Open questions tied to the deliverable
+
+* **Q-DEL-1** — Serialisation format(s) for the deliverable.
+* **Q-DEL-2** — Is there a client review gate between harness output and final delivery?
+* **Q-DEL-3** — How does the client request re-runs (single parameter, single category, or full car)?
+* **Q-DEL-4** — Exact encoding of the `Schema type` field (compact / verbose / structured list).
+* **Q-DEL-5** — Is there a run-level summary section (counts of Yes/No/No-Info, distribution of High/Medium/Basic, list of Conflict and Unable-to-Decide cases) in addition to the per-parameter records? Useful for dashboards.
+
