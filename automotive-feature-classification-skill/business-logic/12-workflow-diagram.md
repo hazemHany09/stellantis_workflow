@@ -206,7 +206,7 @@ sequenceDiagram
     A->>A: merge + emit deliverable
     A->>C: deliverable.json + deliverable.csv
 
-    Note over A: If client wants more sources post-gate:<br/>only option is a new full run (PHASE 1 restart)<br/>or the separate gap-fill workflow.
+    Note over A: If client wants more sources post-gate: only option is a new full run (PHASE 1 restart) or separate gap-fill workflow.
 ```
 
 ***
