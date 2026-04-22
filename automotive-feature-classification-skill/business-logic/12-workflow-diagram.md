@@ -184,7 +184,7 @@ sequenceDiagram
     participant S as Approval store
     participant K as KB
 
-    Note over A: PHASE 1 — Source discovery
+    Note over A: PHASE 1 - Source discovery
     C->>A: Submit request
     A->>A: Resolve car identity
     A->>A: Web search (Mode B) or accept URLs (Mode A)
@@ -192,11 +192,11 @@ sequenceDiagram
     A->>S: flag-for-approval (per URL)
     Note over A: Agent yields; web-search tool never used again this run
 
-    Note over C,S: GATE — asynchronous
+    Note over C,S: GATE - asynchronous
     C->>S: Approve / reject URLs (may take minutes to days)
-    C->>A: "Resume classification" signal
+    C->>A: Resume classification signal
 
-    Note over A: PHASE 2 — Ingestion + classification
+    Note over A: PHASE 2 - Ingestion + classification
     A->>S: retrieve-approved
     S-->>A: Approved URL set (fixed)
     A->>K: download + upload each URL
