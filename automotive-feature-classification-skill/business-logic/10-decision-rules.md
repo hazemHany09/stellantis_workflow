@@ -76,16 +76,16 @@ Resulting output:
 
 ### Rule 4 — Silent-all (Absent by silence)
 
-> If there are **no active sources** for the parameter at all — every reviewed source is silent — Status = `Success`, Presence = `No`, Classification = `Empty`.
+> If there are **no active sources** for the parameter at all — every reviewed source is silent — Status = `Unable to Decide`, Presence = `No Information Found`, Classification = `Empty`.
 >
-> This treats silence across all reviewed sources as an operational "not found in reviewed sources". It does **not** assert the feature is physically absent from the car; it asserts only that the approved, ingested source set contains no mention of the parameter.
+> This distinguishes the "no evidence found" case from the "evidence explicitly says absent" case (Rule 5). `No Information Found` does **not** assert the feature is physically absent from the car; it asserts only that the approved, ingested source set contains no mention of the parameter.
 >
-> **Decided 2026-04-22.** Replaces the former `No Information Found` outcome for the silent-all case. See `11-assumptions.md` (Q-HARN-9) for the accepted trade-off.
+> **Revised 2026-04-23.** Reinstates `No Information Found` as a `presence` value for the silent-all case. The former `Success / No` output for this case (decided 2026-04-22) is superseded. See `11-assumptions.md` (Q-HARN-9, Q-HARN-10).
 
 Resulting output:
 
-* `presence = No`
-* `status = Success`
+* `presence = No Information Found`
+* `status = Unable to Decide`
 * `classification = Empty`
 
 ### Rule 5 — Absent by agreement
@@ -117,34 +117,34 @@ Example combinations:
 * Presence = `Yes`, Status = `Conflict`, Classification = `Empty` — feature is present, but clear sources disagree on level (Rule 2a).
 * Presence = `Disputed`, Status = `Conflict`, Classification = `Empty` — clear sources disagree on whether the feature even exists (Rule 2b).
 * Presence = `Yes`, Status = `Unable to Decide`, Classification = `Empty` — feature is mentioned but only by vague sources (Rule 3).
-* Presence = `No`, Status = `Success`, Classification = `Empty` — no active sources at all (Rule 4 silent-all; distinguishable from Rule 5 only by the empty traceability-block set).
+* Presence = `No Information Found`, Status = `Unable to Decide`, Classification = `Empty` — no active sources at all (Rule 4 silent-all; distinguishable from Rule 5 by both the `presence` value and the empty traceability-block set).
 * Presence = `No`, Status = `Success`, Classification = `Empty` — clear sources agree the feature is absent (Rule 5).
 
 ## Master decision matrix
 
 Every output record must match exactly one row of this table.
 
-| Rule    | Evidence situation (per parameter)                                                                          | Presence   | Status             | Classification   |
-| :------ | :---------------------------------------------------------------------------------------------------------- | :--------- | :----------------- | :--------------- |
-| Rule 1  | All clear active sources agree feature is present and on the same valid level (≥1 clear; vague may coexist) | `Yes`      | `Success`          | the agreed level |
-| Rule 5  | All clear active sources agree feature is absent (explicit; ≥1 clear; vague may coexist)                    | `No`       | `Success`          | `Empty`          |
-| Rule 2a | ≥2 clear active sources agree feature is present but disagree on level                                      | `Yes`      | `Conflict`         | `Empty`          |
-| Rule 2b | ≥2 clear active sources disagree on feature being present vs absent                                         | `Disputed` | `Conflict`         | `Empty`          |
-| Rule 3  | ≥1 active source, but **no clear active source** (all active are vague)                                     | `Yes`      | `Unable to Decide` | `Empty`          |
-| Rule 4  | No active sources at all (every source is silent on this parameter)                                         | `No`       | `Success`          | `Empty`          |
+| Rule    | Evidence situation (per parameter)                                                                          | Presence               | Status             | Classification   |
+| :------ | :---------------------------------------------------------------------------------------------------------- | :--------------------- | :----------------- | :--------------- |
+| Rule 1  | All clear active sources agree feature is present and on the same valid level (≥1 clear; vague may coexist) | `Yes`                  | `Success`          | the agreed level |
+| Rule 5  | All clear active sources agree feature is absent (explicit; ≥1 clear; vague may coexist)                    | `No`                   | `Success`          | `Empty`          |
+| Rule 2a | ≥2 clear active sources agree feature is present but disagree on level                                      | `Yes`                  | `Conflict`         | `Empty`          |
+| Rule 2b | ≥2 clear active sources disagree on feature being present vs absent                                         | `Disputed`             | `Conflict`         | `Empty`          |
+| Rule 3  | ≥1 active source, but **no clear active source** (all active are vague)                                     | `Yes`                  | `Unable to Decide` | `Empty`          |
+| Rule 4  | No active sources at all (every source is silent on this parameter)                                         | `No Information Found` | `Unable to Decide` | `Empty`          |
 
-Presence values in use: `Yes`, `No`, `Disputed`. `No Information Found` is retired (see `06-harness-interface.md` Invariant 8 and `11-assumptions.md` AS-HARN-A).
-Status values in use: `Success`, `Conflict`, `Unable to Decide`. `No Information Found` is retired as a Status value.
+Presence values in use: `Yes`, `No`, `Disputed`, `No Information Found`. `No Information Found` as a **status** value remains retired.
+Status values in use: `Success`, `Conflict`, `Unable to Decide`.
 
-Rule 4 and Rule 5 share the output triple `(No, Success, Empty)` by design. The only visible difference in the deliverable is the traceability-block set: Rule 5 carries at least one clear-source block; Rule 4 carries none. Consumers who need to tell them apart must inspect traceability.
+Rule 4 and Rule 5 produce distinct output triples. Rule 4 emits `(No Information Found, Unable to Decide, Empty)` with no traceability blocks. Rule 5 emits `(No, Success, Empty)` with at least one clear-source block. The two cases are directly distinguishable by `presence` and `status` without inspecting traceability.
 
 ## Invariants (for validators)
 
 1. Silent sources are never counted in Rule 1, Rule 2, Rule 3, or Rule 5.
-2. Vague sources alone never trigger `Success`, `Conflict`, or `No Information Found`. They can only trigger `Unable to Decide`, and only when no clear active source exists.
+2. Vague sources alone never trigger `Success` or `Conflict`. They can only trigger `Unable to Decide` (Rule 3, `presence = Yes`), and only when no clear active source exists. Rule 4 (`presence = No Information Found`) is triggered by total silence, not by vague sources.
 3. A single clear active source is sufficient to decide `Success` — provided no other clear active source contradicts it.
 4. `Classification` is filled **only** under Rule 1 (agreed level). It is always `Empty` under Rules 2a, 2b, 3, 4, and 5.
-5. `Unable to Decide` must never be used as a catch-all for "the model was unsure". It corresponds to a concrete source-taxonomy situation: active sources exist but none are clear. `No Information Found` is retired and must not be emitted.
+5. `Unable to Decide` must never be used as a catch-all for "the model was unsure". It corresponds to two concrete source-taxonomy situations: (a) Rule 3 — active sources exist but none are clear (`presence = Yes`); (b) Rule 4 — no active sources exist at all (`presence = No Information Found`). `No Information Found` as a *status* value remains retired and must not be emitted.
 6. Every output record must map to exactly one row of the master decision matrix.
 7. **A parameter's** **`Classification`** **must belong to the parameter's Schema type** — the non-empty level columns in `artifacts/params.csv`. If the CSV leaves a level cell empty, that level is **not** a valid target for Classification, regardless of what any source describes. Evidence of an undefined tier triggers Rule 3 (`Unable to Decide`), never a nearest-level snap. This enforces the client's guidance: *unless a level is explicitly specified in* *`params.csv`, the parameter cannot be assigned that level.*
 8. `Disputed` is the only Presence value permitted under Rule 2b and cannot appear anywhere else.
