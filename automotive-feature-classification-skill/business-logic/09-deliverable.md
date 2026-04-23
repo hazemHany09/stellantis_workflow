@@ -46,19 +46,17 @@ A single source document can appear in multiple traceability blocks across diffe
 
 ## Serialisation format
 
-**OPEN — Q-DEL-1.** The client has specified the fields but not the file format (JSON, CSV, enriched CSV mirroring `artifacts/params.csv`, a Markdown / PDF report, or multiple outputs side-by-side). The field schema above is format-agnostic and will serialise cleanly into any of those.
+**Resolved — Q-DEL-1 (closed 2026-04-22).** Primary deliverable: a structured JSON file named `<brand>-<model>-<year>-<market>-<run-id>.json` containing the full schema with all traceability blocks intact. Secondary deliverable: a flattened CSV export generated alongside the JSON for analyst review in spreadsheet tools. Traceability blocks are represented in CSV via concatenation or multi-row expansion as needed. Both files are written to the run workspace root.
 
-When Q-DEL-1 is resolved this section will fix:
+Filename convention and exact CSV column mapping are defined in the workflow design phase.
 
-* the primary machine-readable format;
-* the optional human-readable format (if any);
-* the filename convention and per-run output directory.
+## Resolved questions
 
-## Open questions tied to the deliverable
+All deliverable questions are closed. For the record:
 
-* **Q-DEL-1** — Serialisation format(s) for the deliverable.
-* **Q-DEL-2** — Is there a client review gate between harness output and final delivery?
-* **Q-DEL-3** — How does the client request re-runs (single parameter, single category, or full car)?
-* **Q-DEL-4** — Exact encoding of the `Schema type` field (compact / verbose / structured list).
-* **Q-DEL-5** — Is there a run-level summary section (counts of Yes/No/No-Info, distribution of High/Medium/Basic, list of Conflict and Unable-to-Decide cases) in addition to the per-parameter records? Useful for dashboards.
+* **Q-DEL-1** — JSON primary + CSV secondary. Closed 2026-04-22.
+* **Q-DEL-2** — No intermediate review gate. Deliverable emitted directly as final. Closed 2026-04-22.
+* **Q-DEL-3** — Re-runs are flexible via three workflow patterns (full-car, per-parameter flagging, gap-fill). Closed 2026-04-22.
+* **Q-DEL-4** — Compact notation (`B/H`, `B/M/H`, `H`, etc.) with legend in deliverable header. Closed 2026-04-22.
+* **Q-DEL-5** — Run-level summary + extended analytics included. Closed 2026-04-22.
 

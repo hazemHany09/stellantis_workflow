@@ -1,0 +1,440 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "deliverable.schema.json",
+    "title": "Automotive Feature Classification — Deliverable",
+    "description": "Schema of runs/<run-id>/deliverable.json. Primary deliverable per Q-DEL-1. Header per AS-DEL-A. Summary per Q-DEL-5. Footer per AS-DEL-C. Record order = params.csv row order (AS-DEL-B).",
+    "type": "object",
+    "required": [
+        "header",
+        "legend",
+        "summary",
+        "telemetry",
+        "records",
+        "footer"
+    ],
+    "additionalProperties": false,
+    "properties": {
+        "header": {
+            "type": "object",
+            "required": [
+                "run_id",
+                "submitted_at",
+                "completed_at",
+                "workflow",
+                "car_identity",
+                "resolved_trim",
+                "params_csv_hash",
+                "kb_dataset_id",
+                "non_determinism_disclosure"
+            ],
+            "additionalProperties": false,
+            "properties": {
+                "run_id": {
+                    "type": "string"
+                },
+                "submitted_at": {
+                    "type": "string",
+                    "format": "date-time"
+                },
+                "completed_at": {
+                    "type": "string",
+                    "format": "date-time"
+                },
+                "workflow": {
+                    "type": "string"
+                },
+                "mode": {
+                    "type": "string",
+                    "enum": [
+                        "A-client-supplied",
+                        "B-agent-discovered",
+                        "automated-no-gate"
+                    ]
+                },
+                "car_identity": {
+                    "type": "object",
+                    "required": [
+                        "brand",
+                        "model",
+                        "model_year",
+                        "market_input",
+                        "market_canonical"
+                    ],
+                    "properties": {
+                        "brand": {
+                            "type": "string"
+                        },
+                        "model": {
+                            "type": "string"
+                        },
+                        "model_year": {
+                            "type": "integer"
+                        },
+                        "market_input": {
+                            "type": "string"
+                        },
+                        "market_canonical": {
+                            "type": "string"
+                        },
+                        "variant_note": {
+                            "type": "string",
+                            "description": "Q-INPUT-6 auto-resolution note, if any."
+                        }
+                    }
+                },
+                "resolved_trim": {
+                    "type": "string"
+                },
+                "params_csv_hash": {
+                    "type": "string"
+                },
+                "kb_dataset_id": {
+                    "type": "string"
+                },
+                "source_counts": {
+                    "type": "object",
+                    "properties": {
+                        "candidates": {
+                            "type": "integer"
+                        },
+                        "approved": {
+                            "type": "integer"
+                        },
+                        "rejected": {
+                            "type": "integer"
+                        },
+                        "ingested": {
+                            "type": "integer"
+                        },
+                        "failed": {
+                            "type": "integer"
+                        }
+                    }
+                },
+                "ingestion_started_at": {
+                    "type": "string",
+                    "format": "date-time"
+                },
+                "ingestion_completed_at": {
+                    "type": "string",
+                    "format": "date-time"
+                },
+                "classification_started_at": {
+                    "type": "string",
+                    "format": "date-time"
+                },
+                "classification_completed_at": {
+                    "type": "string",
+                    "format": "date-time"
+                },
+                "total_elapsed": {
+                    "type": "string",
+                    "description": "HH:MM:SS"
+                },
+                "subagents_spawned": {
+                    "type": "integer"
+                },
+                "non_determinism_disclosure": {
+                    "type": "string",
+                    "description": "Fixed disclosure text per AS-HARN-E / Q-C-17."
+                }
+            }
+        },
+        "legend": {
+            "type": "object",
+            "description": "Q-DEL-4: SchemaType notation legend + enum glossary inlined for the client.",
+            "required": [
+                "schema_type",
+                "presence",
+                "status",
+                "classification"
+            ],
+            "properties": {
+                "schema_type": {
+                    "type": "object"
+                },
+                "presence": {
+                    "type": "object"
+                },
+                "status": {
+                    "type": "object"
+                },
+                "classification": {
+                    "type": "object"
+                }
+            }
+        },
+        "summary": {
+            "type": "object",
+            "description": "Q-DEL-5 / AS-DEL-summary.",
+            "properties": {
+                "total_parameters": {
+                    "type": "integer"
+                },
+                "presence_counts": {
+                    "type": "object",
+                    "properties": {
+                        "Yes": {
+                            "type": "integer"
+                        },
+                        "No": {
+                            "type": "integer"
+                        },
+                        "Disputed": {
+                            "type": "integer"
+                        },
+                        "No Information Found": {
+                            "type": "integer"
+                        }
+                    }
+                },
+                "status_counts": {
+                    "type": "object",
+                    "properties": {
+                        "Success": {
+                            "type": "integer"
+                        },
+                        "Conflict": {
+                            "type": "integer"
+                        },
+                        "Unable to Decide": {
+                            "type": "integer"
+                        }
+                    }
+                },
+                "classification_counts": {
+                    "type": "object",
+                    "properties": {
+                        "High": {
+                            "type": "integer"
+                        },
+                        "Medium": {
+                            "type": "integer"
+                        },
+                        "Basic": {
+                            "type": "integer"
+                        },
+                        "Empty": {
+                            "type": "integer"
+                        }
+                    }
+                },
+                "schema_type_distribution": {
+                    "type": "object"
+                },
+                "conflict_parameter_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "unable_to_decide_parameter_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "no_information_found_parameter_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "telemetry": {
+            "type": "object",
+            "properties": {
+                "source_coverage": {
+                    "type": "object",
+                    "properties": {
+                        "approved": {
+                            "type": "integer"
+                        },
+                        "ingested": {
+                            "type": "integer"
+                        },
+                        "failed": {
+                            "type": "integer"
+                        }
+                    }
+                },
+                "ingestion_duration": {
+                    "type": "string"
+                },
+                "classification_duration": {
+                    "type": "string"
+                },
+                "subagent_log_excerpt": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "agent_name": {
+                                "type": "string"
+                            },
+                            "category": {
+                                "type": "string"
+                            },
+                            "parameters": {
+                                "type": "integer"
+                            },
+                            "main_loops_used": {
+                                "type": "integer"
+                            },
+                            "fallback_loops_used": {
+                                "type": "integer"
+                            },
+                            "retrieval_calls": {
+                                "type": "integer"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "records": {
+            "type": "array",
+            "description": "Record order = params.csv row order (AS-DEL-B). Exactly one record per parameter in the CSV.",
+            "items": {
+                "type": "object",
+                "required": [
+                    "category",
+                    "parameter_name",
+                    "schema_type",
+                    "presence",
+                    "status",
+                    "classification",
+                    "traceability_blocks"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                    "category": {
+                        "type": "string"
+                    },
+                    "parameter_name": {
+                        "type": "string",
+                        "description": "Optimised Parameter Name (AS-DEL-G)."
+                    },
+                    "schema_type": {
+                        "type": "string",
+                        "enum": [
+                            "B/M/H",
+                            "B/H",
+                            "M/H",
+                            "B/M",
+                            "H",
+                            "M",
+                            "B"
+                        ]
+                    },
+                    "presence": {
+                        "type": "string",
+                        "enum": [
+                            "Yes",
+                            "No",
+                            "Disputed",
+                            "No Information Found"
+                        ]
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "Success",
+                            "Conflict",
+                            "Unable to Decide"
+                        ]
+                    },
+                    "classification": {
+                        "type": "string",
+                        "enum": [
+                            "High",
+                            "Medium",
+                            "Basic",
+                            "Empty"
+                        ]
+                    },
+                    "decision_rule": {
+                        "type": "string",
+                        "enum": [
+                            "Rule-1",
+                            "Rule-2a",
+                            "Rule-2b",
+                            "Rule-3",
+                            "Rule-4",
+                            "Rule-5"
+                        ]
+                    },
+                    "traceability_blocks": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "traceability-block.json.tmpl"
+                        }
+                    }
+                }
+            }
+        },
+        "footer": {
+            "type": "object",
+            "required": [
+                "sources_excluded"
+            ],
+            "additionalProperties": false,
+            "properties": {
+                "sources_excluded": {
+                    "type": "array",
+                    "description": "AS-DEL-C.",
+                    "items": {
+                        "type": "object",
+                        "required": [
+                            "url",
+                            "stage",
+                            "reason"
+                        ],
+                        "properties": {
+                            "url": {
+                                "type": "string",
+                                "format": "uri"
+                            },
+                            "stage": {
+                                "type": "string",
+                                "enum": [
+                                    "download",
+                                    "ingestion"
+                                ]
+                            },
+                            "reason": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "warnings": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "scope": {
+                                "type": "string",
+                                "enum": [
+                                    "parameter",
+                                    "category",
+                                    "run"
+                                ]
+                            },
+                            "parameter": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "message": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

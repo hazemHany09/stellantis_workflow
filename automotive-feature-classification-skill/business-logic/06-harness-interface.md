@@ -28,13 +28,17 @@ For **every** parameter in the reference list, the harness must emit one record 
 
 ### Schema type values
 
-The `schema_type` field describes which of the three levels the CSV actually defines for the parameter. It is an informational mirror of the applicable level set. The exact string values are left open pending client confirmation (see Q-DEL-4) — candidate encodings are:
+The `schema_type` field describes which of the three levels the CSV actually defines for the parameter. It is an informational mirror of the applicable level set. **Compact notation is used (Q-DEL-4, closed 2026-04-22):**
 
-* `"B/M/H"`, `"B/H"`, `"M/H"`, `"H"`, `"B/M"`, `"B"`, `"M"` (compact).
-* `"Basic+Medium+High"`, `"Basic+High"`, etc. (verbose).
-* A structured list such as `["Basic", "High"]`.traceability
+* `"B/M/H"` — Basic, Medium, and High are all defined.
+* `"B/H"` — Basic and High only (no Medium tier).
+* `"M/H"` — Medium and High only.
+* `"H"` — High only.
+* `"B/M"` — Basic and Medium only.
+* `"B"` — Basic only.
+* `"M"` — Medium only.
 
-Pick one convention for the whole run. Do not mix.
+A legend explaining these abbreviations is included in the deliverable header. Pick one convention for the whole run. Do not mix.
 
 ## Invariants
 

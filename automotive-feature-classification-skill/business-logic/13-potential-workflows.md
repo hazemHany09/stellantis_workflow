@@ -89,7 +89,7 @@ The goal of this document is to make explicit which workflows the skill must sup
 
 ## W5 — Gap-fill cycle (coverage-driven)
 
-**Trigger:** client reviews deliverable, identifies parameters with `Presence = No, Status = Success` (silent-all — Rule 4) or other weak-coverage cases, and initiates a gap-fill.
+**Trigger:** client reviews deliverable, identifies parameters with `Presence = No Information Found, Status = Unable to Decide` (Rule 4 — silent-all) or other weak-coverage cases, and initiates a gap-fill.
 
 **Stages:**
 
@@ -121,10 +121,10 @@ The goal of this document is to make explicit which workflows the skill must sup
 
 1. Client flags one or more parameters.
 2. Agent re-invokes the sub-agent assigned to each flagged parameter's category, targeting only the flagged parameters.
-3. Retrieval may use the **same KB** unchanged (no new sources) or, if the client authorises, collapse into W5 for the flagged subset.
+3. Retrieval uses the **same KB unchanged** (no new source discovery). No web search is performed.
 4. Updated records merge into the existing deliverable with a `revised_in_cycle = N` marker.
 
-**Notes:** W6 and W5 are near-siblings. The difference: W6 is "re-classify on existing evidence", W5 is "acquire more evidence first, then re-classify". A client request that combines both collapses to W5 on the flagged parameters.
+**Notes:** W6 and W5 are distinct workflows. W6 is strictly “re-classify on existing evidence” — it **never** silently becomes W5. If the client also wants new sources for the flagged parameters, they must explicitly trigger W5 (or a W5 restricted to those parameters) instead of W6. A request that combines new sources + re-classification on flagged parameters is treated as W5, not W6.
 
 ***
 
