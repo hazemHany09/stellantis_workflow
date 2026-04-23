@@ -16,23 +16,23 @@ The harness receives, per analysis run:
 
 For **every** parameter in the reference list, the harness must emit one record with the following fields. Field names mirror the client's requested deliverable vocabulary.
 
-| Field                  | Type                                                          | Required                         | Notes                                                                                                                                                                                                                                                  |
-| :--------------------- | :------------------------------------------------------------ | :------------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `category`             | string                                                        | Always                           | The category name from the CSV (`Domain / Category`).                                                                                                                                                                                                  |
-| `parameter_name`       | string                                                        | Always                           | The optimised parameter name from the CSV (`Optimised Parameter Name`). This is the externally reported name.                                                                                                                                         |
-| `schema_type`          | string                                                        | Always                           | Describes which level tiers are defined for this parameter in the CSV — i.e. the applicable level set. See "Schema type values" below. **Q-DEL-4 open** on exact encoding.                                                                            |
-| `presence`             | `Yes` \| `No` \| `Disputed`                                   | Always                           | Answers: does the evidence say the feature is on the car? `Disputed` appears only under Rule 2b (clear sources disagree on presence vs absence). Value is determined jointly with `status` per `10-decision-rules.md`. The former `No Information Found` value is retired — see Invariant 8 and `11-assumptions.md` (AS-HARN-A, Q-HARN-10).                              |
-| `status`               | `Success` \| `Conflict` \| `Unable to Decide`                 | Always                  | Outcome of the assignment process. The three values map to the four main decision rules (Rule 1 and Rule 5 both emit `Success`; Rule 2a / 2b both emit `Conflict`; Rule 3 emits `Unable to Decide`; Rule 4 emits `Success`). The former `No Information Found` value is retired — see Invariant 8.                              |
-| `classification`       | `High` \| `Medium` \| `Basic` \| `Empty`                      | Always (may be `Empty`)          | The assigned level. Filled only when `status = Success` **and** `presence = Yes`. Must be a member of the parameter's applicable level set (see `02-parameters-and-levels.md`). `Empty` in every other case.                                       |
-| `traceability_blocks`  | list of traceability blocks (see `09-deliverable.md`)         | At least one when `presence = Yes`; optional otherwise | Each block carries source name, source link, and its own justification text. Multiple blocks may support a single parameter verdict. See `09-deliverable.md`. |
+| Field                 | Type                                                  | Required                                               | Notes                                                                                                                                                                                                                                                                                                                                       |
+| :-------------------- | :---------------------------------------------------- | :----------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `category`            | string                                                | Always                                                 | The category name from the CSV (`Domain / Category`).                                                                                                                                                                                                                                                                                       |
+| `parameter_name`      | string                                                | Always                                                 | The optimised parameter name from the CSV (`Optimised Parameter Name`). This is the externally reported name.                                                                                                                                                                                                                               |
+| `schema_type`         | string                                                | Always                                                 | Describes which level tiers are defined for this parameter in the CSV — i.e. the applicable level set. See "Schema type values" below. **Q-DEL-4 open** on exact encoding.                                                                                                                                                                  |
+| `presence`            | `Yes` \| `No` \| `Disputed`                           | Always                                                 | Answers: does the evidence say the feature is on the car? `Disputed` appears only under Rule 2b (clear sources disagree on presence vs absence). Value is determined jointly with `status` per `10-decision-rules.md`. The former `No Information Found` value is retired — see Invariant 8 and `11-assumptions.md` (AS-HARN-A, Q-HARN-10). |
+| `status`              | `Success` \| `Conflict` \| `Unable to Decide`         | Always                                                 | Outcome of the assignment process. The three values map to the four main decision rules (Rule 1 and Rule 5 both emit `Success`; Rule 2a / 2b both emit `Conflict`; Rule 3 emits `Unable to Decide`; Rule 4 emits `Success`). The former `No Information Found` value is retired — see Invariant 8.                                          |
+| `classification`      | `High` \| `Medium` \| `Basic` \| `Empty`              | Always (may be `Empty`)                                | The assigned level. Filled only when `status = Success` **and** `presence = Yes`. Must be a member of the parameter's applicable level set (see `02-parameters-and-levels.md`). `Empty` in every other case.                                                                                                                                |
+| `traceability_blocks` | list of traceability blocks (see `09-deliverable.md`) | At least one when `presence = Yes`; optional otherwise | Each block carries source name, source link, and its own justification text. Multiple blocks may support a single parameter verdict. See `09-deliverable.md`.                                                                                                                                                                               |
 
 ### Schema type values
 
 The `schema_type` field describes which of the three levels the CSV actually defines for the parameter. It is an informational mirror of the applicable level set. The exact string values are left open pending client confirmation (see Q-DEL-4) — candidate encodings are:
 
-- `"B/M/H"`, `"B/H"`, `"M/H"`, `"H"`, `"B/M"`, `"B"`, `"M"` (compact).
-- `"Basic+Medium+High"`, `"Basic+High"`, etc. (verbose).
-- A structured list such as `["Basic", "High"]`.
+* `"B/M/H"`, `"B/H"`, `"M/H"`, `"H"`, `"B/M"`, `"B"`, `"M"` (compact).
+* `"Basic+Medium+High"`, `"Basic+High"`, etc. (verbose).
+* A structured list such as `["Basic", "High"]`.traceability
 
 Pick one convention for the whole run. Do not mix.
 
@@ -46,7 +46,7 @@ These must hold for every deliverable. Violations are bugs.
 4. `classification` is `Empty` unless `status = Success` and `presence = Yes`.
 5. Every output record must match exactly one row of the master decision matrix in `10-decision-rules.md`.
 6. When `presence = Yes`, at least one traceability block is attached.
-7. Every traceability block references a source document that is in the approved, ingested set of the run's KB.
+7. Every traceabilityblock references a source document that is in the approved, ingested set of the run's KB.
 8. `No Information Found` (as either presence or status) is **retired** — the silent-all case now uses Rule 4: `Status = Success`, `Presence = No`, `Classification = Empty`. The value must not appear in any emitted record. See `10-decision-rules.md` and `11-assumptions.md` (Q-HARN-9, AS-HARN-A).
 9. `Unable to Decide` is used only when active sources exist but none are clear — see Rule 3 in `10-decision-rules.md`.
 10. `schema_type` matches the actual non-empty level columns of the parameter's CSV row — no invented levels, no missing levels.
@@ -55,14 +55,14 @@ These must hold for every deliverable. Violations are bugs.
 
 The master decision matrix lives in `10-decision-rules.md`. The summary truth table below is the validation copy — any row outside it is a bug.
 
-| presence               | status                | classification         | rule    |
-| :--------------------- | :-------------------- | :--------------------- | :------ |
-| `Yes`                  | `Success`             | level in applicable set | Rule 1  |
-| `No`                   | `Success`             | `Empty`                 | Rule 5  |
-| `Yes`                  | `Conflict`            | `Empty`                 | Rule 2a |
-| `Disputed`             | `Conflict`            | `Empty`                 | Rule 2b |
-| `Yes`                  | `Unable to Decide`    | `Empty`                 | Rule 3  |
-| `No`                   | `Success`             | `Empty`                 | Rule 4 (silent-all — indistinguishable in the output from Rule 5, see `10-decision-rules.md`) |
+| presence   | status             | classification          | rule                                                                                          |
+| :--------- | :----------------- | :---------------------- | :-------------------------------------------------------------------------------------------- |
+| `Yes`      | `Success`          | level in applicable set | Rule 1                                                                                        |
+| `No`       | `Success`          | `Empty`                 | Rule 5                                                                                        |
+| `Yes`      | `Conflict`         | `Empty`                 | Rule 2a                                                                                       |
+| `Disputed` | `Conflict`         | `Empty`                 | Rule 2b                                                                                       |
+| `Yes`      | `Unable to Decide` | `Empty`                 | Rule 3                                                                                        |
+| `No`       | `Success`          | `Empty`                 | Rule 4 (silent-all — indistinguishable in the output from Rule 5, see `10-decision-rules.md`) |
 
 ## Why the interface matters before the algorithm
 
@@ -70,9 +70,10 @@ The rest of the skill — source selection, KB population, deliverable generatio
 
 ## Out of scope for this document
 
-- How the harness queries the KB.
-- How it distinguishes `No` from `No Information Found`.
-- How it distinguishes `Conflict` from `Unable to Decide`.
-- How it matches prose descriptions against criterion text.
-- Whether it runs one pass, multiple passes, or per-category passes.
-- Whether it is powered by a single model call, a chain, a graph, or something else.
+* How the harness queries the KB.
+* How it distinguishes `No` from `No Information Found`.
+* How it distinguishes `Conflict` from `Unable to Decide`.
+* How it matches prose descriptions against criterion text.
+* Whether it runs one pass, multiple passes, or per-category passes.
+* Whether it is powered by a single model call, a chain, a graph, or something else.
+

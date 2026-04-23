@@ -20,15 +20,15 @@ The skill only evaluates cars in their **full-option trim** (the highest equipme
 
 ## Primary actors
 
-| Actor            | Role                                                                                                                                                                          |
-| :--------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Client**       | Supplies the car(s) to be analysed, optionally supplies the list of source websites to consult, and approves the source list before ingestion.                                |
-| **Agent**        | Executes the research and classification work. Has access only to the tools declared in `07-tools-and-constraints.md`.                                                        |
-| **Knowledge Base** | External system that stores downloaded source documents, parses them, and answers semantic retrieval queries. Treated as a black box with a defined interface.              |
+| Actor              | Role                                                                                                                                                           |
+| :----------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Client**         | Supplies the car(s) to be analysed, optionally supplies the list of source websites to consult, and approves the source list before ingestion.                 |
+| **Agent**          | Executes the research and classification work. Has access only to the tools declared in `07-tools-and-constraints.md`.                                         |
+| **Knowledge Base** | External system that stores downloaded source documents, parses them, and answers semantic retrieval queries. Treated as a black box with a defined interface. |
 
 ## High-level goal
 
-For every car submitted by the client, produce a structured deliverable that, for each of the ~160 reference parameters, states:
+For every car submitted by the client, produce a structured deliverable that, for each of the \~160 reference parameters, states:
 
 1. Whether the car supports the parameter (Yes / No).
 2. If supported, which implementation level applies (Basic / Medium / High — constrained to the levels defined for that parameter).
@@ -37,6 +37,7 @@ For every car submitted by the client, produce a structured deliverable that, fo
 
 ## What this document set does **not** cover
 
-- The orchestration workflow (ordering of steps, retries, state management).
-- The exact prompts issued to the search / retrieval / classification stages.
-- The internal mechanism of the classification "harness" that converts retrieved evidence into a parameter verdict. The harness will be specified separately. These files only assert that such a stage exists and what it consumes and produces.
+* The orchestration workflow (ordering of steps, retries, state management).
+* The exact prompts issued to the search / retrieval / classification stages.
+* The internal mechanism of the classification "harness" that converts retrieved evidence into a parameter verdict. The harness will be specified separately. These files only assert that such a stage exists and what it consumes and produces.
+
