@@ -75,6 +75,23 @@ Updated by the lead after every consolidation.
 | :---------- | :------- | :--------- | :------------------------ | :--------- | :--------- |
 | `<<name>>`  | `<<cat>>` | `<<n>>`   | `<<value>>`               | `<<ISO>>`  | `<<ISO>>`  |
 
+## Loaded skills
+
+Consolidated by lead agent as skills are loaded at each stage. Split into lead-only and subagent-reported.
+
+### Lead-loaded skills (preflight + operational)
+
+| Skill name | Stage loaded | Purpose |
+| :--------- | :----------- | :------ |
+| `stellantis-domain-context` | preflight | Shared vocabulary, mission, invariants |
+| `<<skill-name>>` | `<<stage>>` | `<<short role>>` |
+
+### Subagent-loaded skills (consolidated from result envelopes)
+
+| Agent name | Skills loaded |
+| :--------- | :------------ |
+| `<<name>>` | `stellantis-domain-context`, `stellantis-decision-rules`, `<<other>>` |
+
 ## Decisions made during this run
 
 One line per notable decision — e.g. trim auto-selection, market canonicalisation, paywall drops, client approval resolution, ingestion timeouts.

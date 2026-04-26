@@ -87,3 +87,7 @@ The contract is embedded verbatim in a fenced `json` block at the top of the sub
 ````
 
 The subagent **must not** edit the contract block; it writes only after the `END CONTRACT` marker.
+
+## Subagent obligation: loaded_skills
+
+When the subagent finishes (before emitting its result envelope), it **must** record which skills it loaded during the run in the result envelope's `loaded_skills` field. This field is required and enables the lead to consolidate skill usage for auditing and debugging. See `src/references/lead-consolidation-loaded-skills.md` for consolidation rules.

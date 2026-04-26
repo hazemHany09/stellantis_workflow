@@ -171,3 +171,22 @@ Assemble these into the result envelope at the tail of the working file, set `"s
 | KB retrieval returns nothing, ever          | Produce Rule-4 for every parameter; return `consolidated-ready`.         |
 | Download of a chunk fails                   | Try once more; on repeat failure, skip that chunk; note in working file. |
 | Cannot build a valid record for a parameter | Produce Rule-4 for that parameter; add a warning; return.                |
+
+## Reporting loaded skills (required)
+
+Before finalizing the result envelope, populate the `loaded_skills` field with the names of all skills loaded during this run. This must include:
+
+- `stellantis-domain-context` (foundational, always loaded)
+- `stellantis-decision-rules` (foundational, always loaded)
+- `stellantis-subagent-classification-loop` (this skill)
+
+Example:
+```json
+"loaded_skills": [
+  "stellantis-domain-context",
+  "stellantis-decision-rules",
+  "stellantis-subagent-classification-loop"
+]
+```
+
+The lead agent uses this field to consolidate skill usage across the entire run for auditing and debugging. See `src/references/lead-consolidation-loaded-skills.md` for the lead's consolidation rules.

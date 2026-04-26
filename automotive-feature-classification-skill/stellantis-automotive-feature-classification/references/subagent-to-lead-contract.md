@@ -52,6 +52,10 @@ The structured result the subagent writes at the bottom of its `.harness/SubAgen
       "message": "<short prose>"
     }
   ],
+  "loaded_skills": [
+    "<skill-name-1>",
+    "<skill-name-2>"
+  ],
   "notes": "<free-form markdown>"
 }
 ```
@@ -63,6 +67,7 @@ The structured result the subagent writes at the bottom of its `.harness/SubAgen
 * **`docs_metadata_updates`** — patches the lead applies via `batch_update_doc_metadata`. The subagent does **not** call the metadata tool directly for final updates; it stages the patches here so the lead can batch across subagents. (The subagent may still call `set_doc_metadata` for intermediate working-memory metadata — e.g. tagging a doc as "read".)
 * **`warnings`** — promoted into the category STATE by the lead during consolidation.
 * **`advisories`** — promoted into `.harness/advisories/` by the lead; never into the deliverable.
+* **`loaded_skills`** — array of skill names (as strings) that the subagent loaded during its run. Used by the lead for consolidation into main STATE.md. Example: `["stellantis-domain-context", "stellantis-decision-rules", "stellantis-subagent-classification-loop"]`.
 
 ## Writing rule
 
