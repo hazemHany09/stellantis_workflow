@@ -1,8 +1,6 @@
 # Enums — Single Source of Truth
 
-This file is the **only** place that lists allowed values for any categorical field used inside the skill. Every other file in `src/` — templates, contracts, workflow, sub-skills, SKILL.md — must link to this file rather than repeat the value set. If a value is not listed here, it is not a valid value.
-
-Each section cites the business-logic document(s) that justify its membership.
+This file is the **only** place that lists allowed values for any categorical field used inside the skill. Every other file in this skill — templates, contracts, workflow, sub-skills, SKILL.md — must link to this file rather than repeat the value set. If a value is not listed here, it is not a valid value.
 
 ---
 
@@ -10,12 +8,12 @@ Each section cites the business-logic document(s) that justify its membership.
 
 Per-parameter answer to *"does the car support this feature?"*.
 
-| Value                  | When used                                                                      | Source                |
-| :--------------------- | :----------------------------------------------------------------------------- | :-------------------- |
-| `Yes`                  | Rule 1 (Success-present), Rule 2a (level conflict), Rule 3 (vague-only)        | decision rules |
-| `No`                   | Rule 5 (Success-absent, explicit negative agreement)                           | decision rules |
-| `Disputed`             | Rule 2b only — clear sources disagree on whether feature exists                | Q-HARN-6 |
-| `No Information Found` | Rule 4 only — no active sources at all (silent-all)                            | Q-HARN-9, Q-HARN-10, AS-HARN-A |
+| Value                  | When used                                                                      |
+| :--------------------- | :----------------------------------------------------------------------------- |
+| `Yes`                  | Rule 1 (Success-present), Rule 2a (level conflict), Rule 3 (vague-only)        |
+| `No`                   | Rule 5 (Success-absent, explicit negative agreement)                           |
+| `Disputed`             | Rule 2b only — clear sources disagree on whether feature exists                |
+| `No Information Found` | Rule 4 only — no active sources at all (silent-all)                            |
 
 `No Information Found` is **retired as a `Status` value**; only valid as a `Presence` value.
 
@@ -25,11 +23,11 @@ Per-parameter answer to *"does the car support this feature?"*.
 
 Outcome of the *assignment process* per parameter.
 
-| Value              | When used                            | Source                |
-| :----------------- | :----------------------------------- | :-------------------- |
-| `Success`          | Rule 1 (present + level) or Rule 5 (absent) | decision rules |
-| `Conflict`         | Rule 2a (level conflict) or Rule 2b (presence conflict) | Q-HARN-3-v2 |
-| `Unable to Decide` | Rule 3 (vague-only) or Rule 4 (silent-all) | decision rules |
+| Value              | When used                                               |
+| :----------------- | :------------------------------------------------------ |
+| `Success`          | Rule 1 (present + level) or Rule 5 (absent)             |
+| `Conflict`         | Rule 2a (level conflict) or Rule 2b (presence conflict) |
+| `Unable to Decide` | Rule 3 (vague-only) or Rule 4 (silent-all)              |
 
 ---
 
@@ -37,12 +35,12 @@ Outcome of the *assignment process* per parameter.
 
 The assigned level.
 
-| Value    | When used                                     | Source                |
-| :------- | :-------------------------------------------- | :-------------------- |
-| `High`   | Rule 1 + `High` in applicable set             | parameter definitions |
-| `Medium` | Rule 1 + `Medium` in applicable set           | parameter definitions |
-| `Basic`  | Rule 1 + `Basic` in applicable set            | parameter definitions |
-| `Empty`  | All non-Rule-1 records; also Rule 1 is impossible when applicable set would disallow the only-evidenced tier (see Q-HARN-4, Invariant 7) | harness interface |
+| Value    | When used                                     |
+| :------- | :-------------------------------------------- |
+| `High`   | Rule 1 + `High` in applicable set             |
+| `Medium` | Rule 1 + `Medium` in applicable set           |
+| `Basic`  | Rule 1 + `Basic` in applicable set            |
+| `Empty`  | All non-Rule-1 records; also Rule 1 is impossible when applicable set would disallow the only-evidenced tier |
 
 Classification must always be a member of the parameter's applicable level set. No nearest-level snapping.
 
@@ -62,8 +60,6 @@ Compact notation for the applicable level set of a parameter. Populated from the
 | `M`     | Medium only                   |
 | `B`     | Basic only                    |
 
-Source: Q-DEL-4.
-
 ---
 
 ## `DecisionRule`
@@ -79,13 +75,11 @@ The rule that produced a given record. Populated for audit + advisory purposes.
 | `Rule-4`  | No active sources at all (silent-all) → `No Information Found / Unable to Decide / Empty`                                     |
 | `Rule-5`  | All clear active sources agree feature is absent → `No / Success / Empty`                                                     |
 
-Source: decision rules.
-
 ---
 
 ## `SourceLifecycle`
 
-Per-URL state. See `04-sources.md` and `12-workflow-diagram.md` section B.
+Per-URL state.
 
 | Value                    | Meaning                                                               |
 | :----------------------- | :-------------------------------------------------------------------- |
@@ -96,13 +90,13 @@ Per-URL state. See `04-sources.md` and `12-workflow-diagram.md` section B.
 | `Approved`               | Client approved (in reply)                                            |
 | `Rejected`               | Client rejected (in reply)                                            |
 | `Downloaded`             | File retrieved locally                                                |
-| `Ingesting`              | Uploaded to KB; `run_document` triggered; parsing in progress         |
+| `Ingesting`              | Uploaded to KB; parsing in progress                                   |
 | `Ingested`               | KB reports parsing complete                                           |
 | `Queryable`              | Retrieval may target this document                                    |
-| `Dropped_Paywall`        | Silently dropped pre-approval (Q-SRC-4)                               |
+| `Dropped_Paywall`        | Silently dropped pre-approval                                         |
 | `Dropped_Duplicate`      | Canonicalised form already seen                                       |
-| `Dropped_DownloadFail`   | 3 retries exhausted (Q-KB-4)                                          |
-| `Dropped_IngestTimeout`  | 60-minute ingestion ceiling exceeded (Q-KB-5)                         |
+| `Dropped_DownloadFail`   | 3 retries exhausted                                                   |
+| `Dropped_IngestTimeout`  | 60-minute ingestion ceiling exceeded                                  |
 | `DeletedByAgent`         | `delete_docs` called post-ingestion (duplicate content, off-target)   |
 
 ---
@@ -114,8 +108,6 @@ Per-URL state. See `04-sources.md` and `12-workflow-diagram.md` section B.
 | `client` | Mode A — user supplied this URL        |
 | `agent`  | Mode B — agent discovered this URL     |
 
-Source: AS-SRC-B.
-
 ---
 
 ## `FailureStage`
@@ -126,8 +118,6 @@ Used in the deliverable footer `sources_excluded` list.
 | :----------- | :--------------------------------- |
 | `download`   | Retries exhausted before upload    |
 | `ingestion`  | Upload succeeded but parsing failed or timed out |
-
-Source: AS-DEL-C.
 
 ---
 
@@ -142,7 +132,7 @@ Coarse-grained progress indicator written into the main `STATE.md`.
 | `dataset-creation`           | Creating the per-run KB dataset                                      |
 | `source-discovery`           | Running Mode-A or Mode-B source discovery                            |
 | `awaiting-approval`          | Candidate list posted to user; workflow paused                       |
-| `download-and-ingest`        | Downloading approved URLs, uploading to KB, triggering `run_document` |
+| `download-and-ingest`        | Downloading approved URLs, uploading to KB, awaiting ingestion completion |
 | `awaiting-ingestion`         | Workflow paused until user sends resume signal for ingestion check   |
 | `classification`             | Subagents running                                                    |
 | `consolidation`              | Lead merging subagent outputs into category + main STATE             |
@@ -207,5 +197,5 @@ Silent sources never produce a block.
 ## Invariants for consumers of this file
 
 1. Any string field in any template, contract, or record that corresponds to one of the enums above **must** carry one of the exact listed values — case-sensitive, whitespace-exact.
-2. Adding a value requires updating this file **and** the referenced business-logic document **and** `framework-maintenance/impact-checklist.md`.
+2. Adding a value requires updating this file **and** `framework-maintenance/impact-checklist.md`.
 3. Removing a value requires a migration note in `framework-maintenance/change-log.md`.

@@ -1,6 +1,6 @@
 # Deliverable CSV — Column Mapping
 
-Secondary deliverable per Q-DEL-1. Flattens the JSON deliverable into a tabular form for analyst review.
+Secondary tabular deliverable. Flattens the JSON deliverable into a tabular form for analyst review.
 
 File: `runs/<run-id>/deliverable.csv`.
 
@@ -9,8 +9,8 @@ File: `runs/<run-id>/deliverable.csv`.
 | # | Column                              | Source (JSON path)                                  | Notes                                                                                               |
 | - | :---------------------------------- | :-------------------------------------------------- | :-------------------------------------------------------------------------------------------------- |
 | 1 | `category`                          | `records[].category`                                |                                                                                                     |
-| 2 | `parameter_name`                    | `records[].parameter_name`                          | Optimised name (AS-DEL-G).                                                                          |
-| 3 | `schema_type`                       | `records[].schema_type`                             | Compact notation (Q-DEL-4).                                                                         |
+| 2 | `parameter_name`                    | `records[].parameter_name`                          | Optimised name.                                                                                     |
+| 3 | `schema_type`                       | `records[].schema_type`                             | Compact notation.                                                                                   |
 | 4 | `presence`                          | `records[].presence`                                | Enum value.                                                                                         |
 | 5 | `status`                            | `records[].status`                                  | Enum value.                                                                                         |
 | 6 | `classification`                    | `records[].classification`                          | Enum value; `Empty` is emitted as the literal string `Empty`.                                       |
@@ -36,7 +36,7 @@ category,parameter_name,schema_type,presence,status,classification,decision_rule
 
 ## Row order
 
-Identical to JSON `records[]` order, which is `params.csv` row order (AS-DEL-B).
+Identical to JSON `records[]` order, which is `params.csv` row order.
 
 ## Summary + footer
 

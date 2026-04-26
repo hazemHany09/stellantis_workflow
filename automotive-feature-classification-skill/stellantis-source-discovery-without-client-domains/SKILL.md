@@ -3,7 +3,9 @@ name: stellantis-source-discovery-without-client-domains
 description: Use when no URLs or domains were supplied by the user — W2 stage 3 or W1 Mode-A fallback. Lead context only.
 loader: lead
 stage: W1-stage-3-modeB, W2-stage-3
-requires: []
+requires:
+  - stellantis-domain-context
+  - stellantis-failure-handling
 provides:
   - source-candidate-list.md
 tools:
@@ -16,7 +18,11 @@ tools:
 
 ## Dependencies
 
-None. Standalone skill (Mode B fallback). Produces output consumed by `stellantis-source-validation`.
+Foundational:
+- `stellantis-domain-context` — vocabulary.
+- `stellantis-failure-handling` — URL canonicalisation, candidate cap, paywall drop.
+
+Standalone (Mode B). Produces output consumed by `stellantis-source-validation`.
 
 ---
 
@@ -36,7 +42,7 @@ W2 stage 3 (not authored yet as a full workflow, but this sub-skill is ready). A
 | :----------------------- | :------------------------------------------- |
 | `car_identity`           | Main STATE.md                                |
 | Categories + parameters  | Frozen `runs/<run-id>/params.csv`            |
-| `cap`                    | Main STATE.md (default 20, AS-INPUT-D)       |
+| `cap`                    | Main STATE.md (default 20)                   |
 
 ## Tools allowed
 

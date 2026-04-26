@@ -3,7 +3,9 @@ name: stellantis-source-discovery-with-client-domains
 description: Use when the user's submission includes specific URLs or domain names — W1 stage 3, Mode A source discovery. Lead context only.
 loader: lead
 stage: W1-stage-3-modeA
-requires: []
+requires:
+  - stellantis-domain-context
+  - stellantis-failure-handling
 provides:
   - source-candidate-list.md
 tools:
@@ -13,7 +15,11 @@ tools:
 
 ## Dependencies
 
-None. Standalone skill. Produces output consumed by `stellantis-source-validation`.
+Foundational:
+- `stellantis-domain-context` — vocabulary (source site vs domain).
+- `stellantis-failure-handling` — URL canonicalisation, paywall drop.
+
+Produces output consumed by `stellantis-source-validation`.
 
 ---
 

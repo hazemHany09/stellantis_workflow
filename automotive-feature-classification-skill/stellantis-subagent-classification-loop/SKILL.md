@@ -3,7 +3,13 @@ name: stellantis-subagent-classification-loop
 description: Use when spawned as a subagent with a pre-seeded working file containing a parameter partition — subagent context only, no web search or browser tools.
 loader: subagent
 stage: W1-stage-6a
-requires: []
+requires:
+  - stellantis-domain-context
+  - stellantis-decision-rules
+  - stellantis-output-contract
+  - stellantis-failure-handling
+  - stellantis-knowledge-base-protocol
+  - stellantis-run-workspace
 provides:
   - result-envelope-JSON
   - per-partition-classification-records
@@ -14,13 +20,17 @@ tools:
   - download_attachment
   - doc_infos
   - get_metadata_summary
-  - set_doc_metadata
-  - batch_update_doc_metadata
 ---
 
 ## Dependencies
 
-None. Runs in subagent context only (spawned by `stellantis-lead-agent-subagent-orchestration`).
+Foundational skills (loaded by the spawning lead, inherited on spawn):
+- `stellantis-domain-context` — vocabulary + invariants.
+- `stellantis-decision-rules` — the only legal `(Presence, Status, Classification)` triples.
+- `stellantis-output-contract` — record shape this loop emits.
+- `stellantis-failure-handling` — retrieval retry + Rule-4 fallback policy.
+- `stellantis-knowledge-base-protocol` — retrieval contract.
+- `stellantis-run-workspace` — working file ownership.
 
 Reads `enums-reference`, `lead-to-subagent-contract`, `subagent-to-lead-contract` on spawn. Performs KB retrieval only.
 
@@ -51,9 +61,10 @@ Only the tools in the contract's `tool_allowlist`. The authoritative set is:
 * `retrieval`, `retrieve_knowledge_graph`
 * `list_chunks`, `download_attachment`
 * `doc_infos`, `get_metadata_summary`
-* `set_doc_metadata`, `batch_update_doc_metadata` (for intermediate tagging only — final patches are **staged** in the envelope, not applied directly)
 
-**Forbidden:** `google_search*`, `browser_render*`, `create_dataset`, `delete_datasets`, `upload_with_metadata`, `run_document`, `delete_docs`. Also forbidden: reading any file under `.harness/Category/`, other `.harness/SubAgent/` files, or the main `STATE.md`.
+The subagent never writes document metadata directly. It **stages** metadata patches inside its result envelope; the lead applies them via `batch_update_doc_metadata` during consolidation.
+
+**Forbidden:** `google_search`, `google_search_news`, `google_search_images`, `google_search_videos`, `google_search_autocomplete`, any `browser_render_*` or `browser_crawl_*` tool, `create_dataset`, `delete_datasets`, `upload_with_metadata`, `delete_docs`, `set_doc_metadata`, `batch_update_doc_metadata`. Also forbidden: reading any file under `.harness/Category/`, other `.harness/SubAgent/` files, or the main `STATE.md`.
 
 ## Main loop — up to 3 iterations (budget from contract)
 
@@ -130,7 +141,7 @@ If a parameter remains unresolved at the end of fallback iteration 3:
 * If any `vague` active source was found at any point → Rule-3.
 * Else → Rule-4.
 
-Advisory: a parameter finishing at Rule-4 does **not** produce a warning; it is an expected outcome (Q-HARN-5, Q-C-14).
+Advisory: a parameter finishing at Rule-4 does **not** produce a warning; it is an expected outcome of the silent-all evidence situation.
 
 ## Final output
 
@@ -147,7 +158,7 @@ Assemble these into the result envelope at the tail of the working file, set `"s
 
 1. Every parameter in the contract has exactly one record in the envelope.
 2. Every traceability block references a `doc_id` that appears in `loop_stats.docs_touched`.
-3. Every enum-typed field uses a value from `enums.md` (from **automotive-feature-classification skill**).
+3. Every enum-typed field uses a value from the `enums-reference`.
 4. Cardinality of traceability blocks matches the cardinality rules (e.g. Rule-4 → zero blocks; Rule-2a/2b → ≥2 clear blocks).
 5. The subagent never calls any tool outside `tool_allowlist`.
 6. The subagent never writes any file other than its own working file.

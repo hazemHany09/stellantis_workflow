@@ -4,6 +4,11 @@ description: Use when ingestion verification has passed and parameter classifica
 loader: lead
 stage: W1-stage-6, W1-stage-6b
 requires:
+  - stellantis-domain-context
+  - stellantis-decision-rules
+  - stellantis-output-contract
+  - stellantis-failure-handling
+  - stellantis-run-workspace
   - stellantis-subagent-classification-loop
 provides:
   - partition-manifests
@@ -16,8 +21,11 @@ tools:
 
 ## Dependencies
 
-Hard dependency:
-- `stellantis-subagent-classification-loop` (spawned per partition in stage 6a)
+Foundational:
+- `stellantis-domain-context`, `stellantis-decision-rules`, `stellantis-output-contract`, `stellantis-failure-handling`, `stellantis-run-workspace`.
+
+Hard:
+- `stellantis-subagent-classification-loop` (spawned per partition in stage 6a).
 
 Receives KB dataset from `stellantis-source-download-and-ingest`; orchestrates subagent partitions.
 
@@ -43,7 +51,7 @@ W1 stage 6 (and 6a, 6b). After ingestion verification has passed.
 
 ## Tools allowed (for the lead during this phase)
 
-* Subagent spawn primitive of the host platform (e.g. `runSubagent`, task-agent API).
+* The host platform's subagent-spawn primitive (whatever the runtime exposes for launching child agents). The skill is platform-agnostic; substitute the equivalent primitive of the deployment system.
 * File read/write on the run workspace.
 * `get_metadata_summary` (read-only, for sanity check after consolidation).
 * `batch_update_doc_metadata` (applied on staged patches from subagent envelopes).

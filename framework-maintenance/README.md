@@ -9,24 +9,39 @@ This folder is for an **operator or an agent explicitly invoked to modify the Au
 
 ## Skill Package Layout
 
-The framework is now distributed as **8 independently importable skill packages** (one SKILL.md each):
+The framework is distributed as **independently importable skill packages** (one SKILL.md each), grouped into two tiers.
+
+### Foundational skills (always loaded at preflight)
+
+| Package directory                          | Role                                                                                                                                       |
+| :----------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------- |
+| `stellantis-domain-context/`               | Mission, vocabulary, master invariants, glossary, evergreen tips. Loaded by **every** agent role.                                          |
+| `stellantis-decision-rules/`               | Five decision rules + master matrix + 8 invariants. Loaded by lead and every classification subagent.                                      |
+| `stellantis-output-contract/`              | Per-parameter record shape, deliverable format, run-header, `sources_excluded` footer.                                                     |
+| `stellantis-workflow-modes/`               | Currently authored workflows + reserved slots + composition rules. Loaded by the lead at preflight.                                        |
+| `stellantis-failure-handling/`             | Retry / drop / timeout policy. Centralises canonicalisation rules and the `sources_excluded` emission rule.                                |
+| `stellantis-knowledge-base-protocol/`      | Vendor-agnostic KB capability contract. Ingestion wait, retrieval discipline, delete protocol.                                             |
+| `stellantis-run-workspace/`                | Workspace layout, writer ownership, pause/resume contract, resumability checklist.                                                         |
+| `stellantis-approval-gate/`                | URL-level approval gate, flag/retrieve operations, hard phase boundary enforcement.                                                        |
+
+### Operational skills (loaded lazily per stage)
 
 | Package directory                          | Role                                                                   |
 | :----------------------------------------- | :--------------------------------------------------------------------- |
-| `automotive-feature-classification/`       | **Core skill** — entry point, shared references, templates, workflows  |
-| `car-trim-resolution/`                     | Sub-skill — lead context                                               |
-| `source-discovery-with-client-domains/`    | Sub-skill — lead context                                               |
-| `source-discovery-without-client-domains/` | Sub-skill — lead context                                               |
-| `source-validation/`                       | Sub-skill — lead context                                               |
-| `source-download-and-ingest/`              | Sub-skill — lead context                                               |
-| `lead-agent-subagent-orchestration/`       | Sub-skill — lead context                                               |
-| `subagent-classification-loop/`            | Sub-skill — subagent context                                           |
+| `stellantis-automotive-feature-classification/`       | **Core skill** — entry point, shared references, templates, workflows  |
+| `stellantis-car-trim-resolution/`                     | Lead context — trim resolution at preflight                            |
+| `stellantis-source-discovery-with-client-domains/`    | Lead context — Mode A discovery                                        |
+| `stellantis-source-discovery-without-client-domains/` | Lead context — Mode B discovery                                        |
+| `stellantis-source-validation/`                       | Lead context — candidate validation                                    |
+| `stellantis-source-download-and-ingest/`              | Lead context — download + ingest                                       |
+| `stellantis-lead-agent-subagent-orchestration/`       | Lead context — partition + spawn + consolidate                         |
+| `stellantis-subagent-classification-loop/`            | Subagent context — KB retrieval + classification                       |
 
 **Core-only assets** (not duplicated in sub-skills):
-- `automotive-feature-classification/references/` — enums, contracts, ownership matrix, workspace layout
-- `automotive-feature-classification/templates/` — all JSON/Markdown templates
-- `automotive-feature-classification/workflows/` — W1 and future workflow docs
-- `automotive-feature-classification/assets/` — params CSV policy
+- `stellantis-automotive-feature-classification/references/` — enums, contracts, ownership matrix, workspace layout
+- `stellantis-automotive-feature-classification/templates/` — all JSON/Markdown templates
+- `stellantis-automotive-feature-classification/workflows/` — W1 and future workflow docs
+- `stellantis-automotive-feature-classification/assets/` — params CSV policy
 
 Sub-skills reference core assets by prose (e.g. *"per the `enums.md` reference in **automotive-feature-classification skill**"*) rather than relative file paths.
 

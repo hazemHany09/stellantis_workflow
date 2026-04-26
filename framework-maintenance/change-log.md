@@ -17,6 +17,45 @@ Entry format:
 
 ***
 
+## 2026-04-26 — Add foundational-skill tier (domain-context, decision-rules, output-contract, workflow-modes, failure-handling, kb-protocol, approval-gate, run-workspace)
+
+**Intent.** Promote cross-cutting concerns out of the operational sub-skills and into a tier of always-on foundational skills, so every agent role (lead and subagent) shares the same vocabulary, rule engine, output contract, retry policy, KB protocol, and workspace ownership rules. Eliminates drift between agents and centralises the high-value tips/pitfalls accumulated during design.
+
+**Files changed.**
+
+* `stellantis-domain-context/SKILL.md` — new. Mission, vocabulary contract, four hard constants, master invariants, glossary mini-reference, evergreen tips.
+* `stellantis-decision-rules/SKILL.md` — new. Five rules, master matrix, edge cases, eight invariants, tips.
+* `stellantis-output-contract/SKILL.md` — new. Per-parameter record shape, deliverable format, run header, summary, `sources_excluded` footer, ordering rules, tips.
+* `stellantis-workflow-modes/SKILL.md` — new. W1 (Mode A / Mode B) authored; W2..W8 reserved as named slots; composition rules; maintenance procedure for adding workflows later.
+* `stellantis-failure-handling/SKILL.md` — new. Six failure classes, retry budgets, drop policy, URL canonicalisation, `sources_excluded` emission, run-abort criteria.
+* `stellantis-knowledge-base-protocol/SKILL.md` — new. Capability categories, scoping rule, document metadata, lifecycle, ingestion wait, retrieval contract, hard rules.
+* `stellantis-approval-gate/SKILL.md` — new. `flag-for-approval` / `retrieve-approved` operations, URL-level semantics, yield/resume protocol, hard phase boundary (ARCH-4) enforcement.
+* `stellantis-run-workspace/SKILL.md` — new. Workspace layout, writer ownership, pause/resume contract, resumability checklist.
+* `stellantis-automotive-feature-classification/SKILL.md` — updated `requires` to include all eight foundational skills; preflight section now loads them first; common-mistakes section expanded.
+* `stellantis-car-trim-resolution/SKILL.md` — added `requires: stellantis-domain-context`; added explicit "full option = manufacturer's published top trim" policy section; added Tips section.
+* `stellantis-subagent-classification-loop/SKILL.md` — `requires` extended to include foundational skills (domain-context, decision-rules, output-contract, failure-handling, kb-protocol, run-workspace).
+* `stellantis-lead-agent-subagent-orchestration/SKILL.md` — `requires` extended with foundational skills.
+* `stellantis-source-download-and-ingest/SKILL.md` — `requires` extended with foundational skills + `stellantis-approval-gate`.
+* `stellantis-source-validation/SKILL.md` — `requires` extended with foundational skills; downstream now feeds `stellantis-approval-gate`.
+* `stellantis-source-discovery-with-client-domains/SKILL.md` — `requires` extended with foundational skills.
+* `stellantis-source-discovery-without-client-domains/SKILL.md` — `requires` extended with foundational skills.
+* `framework-maintenance/README.md` — replaced flat package table with foundational + operational tiers.
+* `framework-maintenance/impact-checklist.md` — added `Edit a foundational skill` section (per-skill trigger tables), `Add tips / common pitfalls to a skill` section (where tips go and rules for adding them), `Add a new foundational skill` section.
+
+**Business-logic IDs touched.** None. This is a structural redistribution; no business rule changed. The new skills are operational restatements of already-settled assumptions and decision rules.
+
+**Impact-checklist items applied.** New foundational-skill tier registered. Lead skill `requires` updated. Cross-skill `requires` updated. Subagent inheritance of foundational skills documented. New impact-checklist sections added in lockstep with the new skills.
+
+**Migration notes.**
+
+* The partition cap of ≤ 15 parameters per subagent is already implemented in `stellantis-lead-agent-subagent-orchestration` and is unchanged. No separate partitioning skill is added.
+* `stellantis-approval-gate` is now the canonical source for the URL-level approval contract. `stellantis-source-download-and-ingest` and `stellantis-source-validation` delegate to it instead of restating the gate semantics.
+* The W1 workflow document (`workflows/W1-normal-pipeline-mode-a/WORKFLOW.md`) is unchanged and remains canonical for stage-by-stage flow. `stellantis-workflow-modes` only adds the dispatch and composition layer above it.
+* When a new workflow is authored later, follow the procedure documented in `stellantis-workflow-modes` *Maintenance — adding a new workflow* and the new *Edit a foundational skill — `stellantis-workflow-modes`* row in the impact checklist.
+* Tips are now first-class. The locations and rules for adding them are documented in the new *Add tips / common pitfalls to a skill* impact-checklist section.
+
+***
+
 ## 2026-04-24 — Decompose monolithic `src/` into sibling skill packages
 
 **Intent.** Replace the nested `src/skills/*/SKILL.md` layout with 8 independently importable skill packages so each can be zipped and distributed separately (Claude Desktop, DeerFlow, OpenClaw, etc. each require exactly one SKILL.md per import).

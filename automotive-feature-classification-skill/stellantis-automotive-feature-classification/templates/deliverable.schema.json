@@ -2,7 +2,7 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$id": "deliverable.schema.json",
     "title": "Automotive Feature Classification — Deliverable",
-    "description": "Schema of runs/<run-id>/deliverable.json. Primary deliverable per Q-DEL-1. Header per AS-DEL-A. Summary per Q-DEL-5. Footer per AS-DEL-C. Record order = params.csv row order (AS-DEL-B).",
+    "description": "Schema of runs/<run-id>/deliverable.json. Primary deliverable. Record order = params.csv row order. Exactly one record per parameter in the CSV.",
     "type": "object",
     "required": [
         "header",
@@ -78,7 +78,7 @@
                         },
                         "variant_note": {
                             "type": "string",
-                            "description": "Q-INPUT-6 auto-resolution note, if any."
+                            "description": "Auto-resolution note for ambiguous identity, if any."
                         }
                     }
                 },
@@ -136,13 +136,13 @@
                 },
                 "non_determinism_disclosure": {
                     "type": "string",
-                    "description": "Fixed disclosure text per AS-HARN-E / Q-C-17."
+                    "description": "Fixed non-determinism disclosure text shown to the client."
                 }
             }
         },
         "legend": {
             "type": "object",
-            "description": "Q-DEL-4: SchemaType notation legend + enum glossary inlined for the client.",
+            "description": "SchemaType notation legend + enum glossary inlined for the client.",
             "required": [
                 "schema_type",
                 "presence",
@@ -166,7 +166,7 @@
         },
         "summary": {
             "type": "object",
-            "description": "Q-DEL-5 / AS-DEL-summary.",
+            "description": "Run-level summary block: counts, distributions, and lists of Conflict / Unable-to-Decide / No Information Found parameter ids.",
             "properties": {
                 "total_parameters": {
                     "type": "integer"
@@ -295,7 +295,7 @@
         },
         "records": {
             "type": "array",
-            "description": "Record order = params.csv row order (AS-DEL-B). Exactly one record per parameter in the CSV.",
+            "description": "Record order = params.csv row order. Exactly one record per parameter in the CSV.",
             "items": {
                 "type": "object",
                 "required": [
@@ -314,7 +314,7 @@
                     },
                     "parameter_name": {
                         "type": "string",
-                        "description": "Optimised Parameter Name (AS-DEL-G)."
+                        "description": "Optimised Parameter Name."
                     },
                     "schema_type": {
                         "type": "string",
@@ -383,7 +383,7 @@
             "properties": {
                 "sources_excluded": {
                     "type": "array",
-                    "description": "AS-DEL-C.",
+                    "description": "List of URLs that were excluded after approval (download/ingestion failures).",
                     "items": {
                         "type": "object",
                         "required": [

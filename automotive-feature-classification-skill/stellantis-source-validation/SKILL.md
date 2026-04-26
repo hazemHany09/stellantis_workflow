@@ -4,6 +4,8 @@ description: Use immediately after source discovery completes — to filter the 
 loader: lead
 stage: W1-stage-3b
 requires:
+  - stellantis-domain-context
+  - stellantis-failure-handling
   - stellantis-source-discovery-with-client-domains
   - stellantis-source-discovery-without-client-domains
 provides:
@@ -14,11 +16,14 @@ tools:
 
 ## Dependencies
 
+Foundational:
+- `stellantis-domain-context`, `stellantis-failure-handling` (canonicalisation rules, paywall drop policy).
+
 Conditional:
 - `stellantis-source-discovery-with-client-domains` (if Mode A), OR
 - `stellantis-source-discovery-without-client-domains` (if Mode B)
 
-Consumes candidate list from either discovery skill; produces validated list for `stellantis-source-download-and-ingest`.
+Consumes candidate list from either discovery skill; produces validated list for `stellantis-approval-gate`.
 
 ---
 

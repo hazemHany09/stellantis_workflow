@@ -1,10 +1,15 @@
 ---
 name: stellantis-source-download-and-ingest
-description: Use when source URLs have been approved by the user and are ready for KB ingestion — W1 stages 4–5. Lead context only.
+description: Use when source URLs have been approved by the user and are ready for ingestion into the knowledge base — W1 stages 4–5. Lead context only.
 loader: lead
 stage: W1-stage-4, W1-stage-5
 requires:
+  - stellantis-domain-context
+  - stellantis-failure-handling
+  - stellantis-knowledge-base-protocol
+  - stellantis-run-workspace
   - stellantis-source-validation
+  - stellantis-approval-gate
 provides:
   - KB-dataset-with-documents
   - sources_excluded.md
@@ -13,16 +18,20 @@ tools:
   - browser_render_pdf
   - browser_render_content
   - upload_with_metadata
-  - run_document
   - doc_infos
   - list_docs
   - get_metadata_summary
+  - delete_docs
 ---
 
 ## Dependencies
 
-Requires:
-- `stellantis-source-validation` (produces approved source list)
+Foundational:
+- `stellantis-domain-context`, `stellantis-failure-handling`, `stellantis-knowledge-base-protocol`, `stellantis-run-workspace`.
+
+Hard:
+- `stellantis-source-validation` — produces validated candidate list.
+- `stellantis-approval-gate` — produces the approved URL set.
 
 Feeds into `stellantis-lead-agent-subagent-orchestration` after ingestion verification.
 
@@ -32,7 +41,7 @@ Feeds into `stellantis-lead-agent-subagent-orchestration` after ingestion verifi
 
 ## Overview
 
-Downloads each approved URL to the appropriate file format, uploads to the KB dataset with structured metadata, triggers a single batch ingestion call, then pauses for user confirmation before verifying ingestion status against the 60-minute per-document ceiling.
+Downloads each approved URL to the appropriate file format, uploads to the knowledge-base dataset with structured metadata (which queues each document for ingestion), then pauses for user confirmation before verifying ingestion status against the 60-minute per-document ceiling.
 
 ## When this runs
 
@@ -48,10 +57,10 @@ W1 stages 4–5. After the client has approved at least one URL and sent the imp
 
 ## Tools allowed
 
-* **Download:** `browser_render_markdown`, `browser_render_pdf`, `browser_render_content` (fallback), plus plain HTTP-like fetch via `browser_render_content` when the file is already a static binary.
-* **Upload:** `upload_with_metadata`.
-* **Ingestion trigger:** `run_document`.
+* **Download:** `browser_render_markdown`, `browser_render_pdf`, `browser_render_content` (fallback for already-static binaries).
+* **Upload + ingestion submission:** `upload_with_metadata` — ingestion is queued by the knowledge base as part of upload.
 * **Polling:** `doc_infos`, `list_docs`, `get_metadata_summary`.
+* **Cleanup:** `delete_docs` (only to remove a document that ingestion irrecoverably failed on).
 
 ## Download decision tree
 
@@ -101,39 +110,28 @@ For each successfully downloaded file, call `upload_with_metadata` with:
 
 Record the returned `doc_id` in the main STATE.md's source roster.
 
-## Ingestion trigger
+## Ingestion submission
 
-After **every** approved URL has been uploaded (or accounted for as failed), call `run_document` **once** with the full list of returned `doc_ids`:
-
-```json
-{
-  "doc_ids":   ["<doc_id_1>", "<doc_id_2>", "..."],
-  "run":       "1",
-  "delete":    false,
-  "apply_kb":  false
-}
-```
-
-Record the call time as `ingestion_started_at` in the main STATE.md.
+Each successful `upload_with_metadata` call submits the document for ingestion as part of the upload. Record the returned `doc_id` in the source roster and record the upload timestamp as `ingestion_started_at` in the main STATE.md (use the earliest upload timestamp when uploading multiple documents).
 
 ## Pause boundary
 
-Immediately after the `run_document` call, **pause**:
+Immediately after the final upload call, **pause**:
 
 * `RunStatus = paused`
 * `PauseReason = awaiting-client-resume`
-* Post a message to the user: *"Ingestion has been triggered for N documents. Send `resume` when you are ready and I will verify ingestion status."*
+* Post a message to the user: *"Ingestion has been queued for N documents. Send `resume` when you are ready and I will verify ingestion status."*
 
 The lead does **not** poll `doc_infos` during this pause. That happens on resume.
 
 ## On resume
 
 1. Call `list_docs` or `doc_infos(doc_ids=[…])` for every `doc_id` in the roster.
-2. For each document check `run_status` (RAGFlow reports one of: running, done, failed). Treat status semantics:
+2. For each document check the parsing/run status reported by the knowledge base. Treat status semantics:
    * `done` → set SourceLifecycle = `Ingested`.
    * `running` → still ingesting.
    * `failed` → set SourceLifecycle = `Dropped_IngestTimeout`, `FailureStage = ingestion`, record in `sources_excluded.md`.
-3. Apply the 60-minute per-document ceiling from Q-KB-5. For a doc still `running`:
+3. Apply the 60-minute per-document ceiling. For a doc still `running`:
    * If `now - ingestion_started_at < 60 minutes` — doc is within budget; pause again with `PauseReason = awaiting-ingestion-completion` and ask the user to wait.
    * If `now - ingestion_started_at ≥ 60 minutes` — drop the doc with `FailureStage = ingestion, reason = timeout-60min` and continue with the rest.
 4. If at least one doc is `done` and **all others** are either `done`, `failed`, or `dropped on timeout`, proceed past the gate.
@@ -143,17 +141,17 @@ The lead does **not** poll `doc_infos` during this pause. That happens on resume
 
 * `runs/<run-id>/.harness/Archive/sources_excluded.md` updated for any drops.
 * Main STATE.md source stats block updated (Ingested / Dropped_IngestTimeout / etc.).
-* Per-doc metadata persisted in RAGFlow (queryable via `get_metadata_summary`).
+* Per-doc metadata persisted in the knowledge base (queryable via `get_metadata_summary`).
 
 ## Success criteria
 
-* Every approved URL has either a live `doc_id` with `run_status = done` OR an entry in `sources_excluded.md`.
+* Every approved URL has either a live `doc_id` reporting status `done` OR an entry in `sources_excluded.md`.
 * `ingestion_started_at` and `ingestion_completed_at` are set in main STATE.md.
 
 ## Failure modes
 
 | Failure                                            | Response                                                                   |
 | :------------------------------------------------- | :------------------------------------------------------------------------- |
-| `upload_with_metadata` fails for a file            | Retry 3×; on final failure record as `stage = download`.         |
-| `run_document` returns `{"success": false}`        | Retry once with the same payload; on second failure, abort the run with `RunStatus = failed`. |
+| `upload_with_metadata` fails for a file            | Retry 3×; on final failure record as `stage = download`.                   |
+| Document repeatedly reports `failed` after upload  | Mark `Dropped_IngestTimeout`; record in `sources_excluded.md`.             |
 | No documents ingest within timeout                 | Pause with `ingestion-error-client-confirmation-needed` and surface the status breakdown. |

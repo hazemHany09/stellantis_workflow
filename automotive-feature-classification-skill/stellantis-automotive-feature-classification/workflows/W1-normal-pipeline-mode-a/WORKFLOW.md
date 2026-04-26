@@ -14,7 +14,7 @@ Trigger: the user submits a classification request. URLs and domains are optiona
 | 3  | `source-discovery`       | Lead     | no               | [`source-discovery-with-client-domains`](../../skills/source-discovery-with-client-domains/SKILL.md) or [`source-discovery-without-client-domains`](../../skills/source-discovery-without-client-domains/SKILL.md) → [`source-validation`](../../skills/source-validation/SKILL.md) |
 | 3b | `post-candidate-list`    | Lead     | **yes**          | — (writes the list and pauses)                                                                                                                                        |
 | 3c | `parse-approval-reply`   | Lead     | no               | — (inline logic; resumes from 3b)                                                                                                                                     |
-| 4  | `download-and-upload`    | Lead     | no               | [`source-download-and-ingest`](../../skills/source-download-and-ingest/SKILL.md) (through `run_document`)                                                             |
+| 4  | `download-and-upload`    | Lead     | no               | [`source-download-and-ingest`](../../skills/source-download-and-ingest/SKILL.md)                                                                                      |
 | 4b | `await-ingestion-resume` | Lead     | **yes**          | —                                                                                                                                                                     |
 | 5  | `verify-ingestion`       | Lead     | maybe            | [`source-download-and-ingest`](../../skills/source-download-and-ingest/SKILL.md) (resume path)                                                                        |
 | 6  | `partition-and-spawn`    | Lead     | no               | [`lead-agent-subagent-orchestration`](../../skills/lead-agent-subagent-orchestration/SKILL.md)                                                                        |
@@ -31,15 +31,13 @@ Trigger: the user submits a classification request. URLs and domains are optiona
 
 **Actions.**
 
-1. Extract `brand`, `model`, `model_year`, `market_input`. Normalise `market_input` to `market_canonical` per Q-INPUT-7 (ISO alpha-2 for countries; zone codes for zones).
+1. Extract `brand`, `model`, `model_year`, `market_input`. Normalise `market_input` to `market_canonical` (ISO alpha-2 for countries; zone codes for zones such as `EU`, `MEA`, `GCC`, `NAFTA`).
 2. Extract `client_urls[]` and `client_domains[]` if present. A token with a scheme (`http://`, `https://`) is a URL; a bare host (`bmw.com`) is a domain. Both fields default to empty — their absence is valid and handled in Stage 3.
 3. If any of the four required fields is missing — **pause** with `PauseReason = missing-required-input`. Ask only for the missing field. On resume, repeat this stage.
 
 **Outputs.** Preflight can create the run workspace (see [`../../SKILL.md`](../../SKILL.md) §2). Main STATE.md is initialised from [`../../templates/STATE.main.md.tmpl`](../../templates/STATE.main.md.tmpl).
 
 **Success.** Main STATE.md exists with the four fields populated, RunStage = `parsing`, RunStatus = `active`.
-
-**Traceability.** Q-INPUT-1..8, Q-INPUT-5, Q-C-1, AS-INPUT-A..D.
 
 ***
 
@@ -62,8 +60,6 @@ Trigger: the user submits a classification request. URLs and domains are optiona
 1. Call `create_dataset` with name `afc-<run-id>` and description that embeds the car tuple + resolved trim.
 2. Record the returned dataset id into STATE.md as `kb_dataset_id`.
 3. Update RunStage = `dataset-creation` → on completion, move to `source-discovery`.
-
-**Traceability.** Q-KB-2, AS-KB-A.
 
 ***
 
@@ -118,15 +114,13 @@ Accepted patterns (case-insensitive, tolerant of surrounding prose):
 3. Set RunStatus = `active`, clear PauseReason. RunStage = `download-and-ingest`.
 4. If **zero URLs approved**, pause again with a gentle re-prompt. Do not proceed with zero approvals.
 
-**Traceability.** Q-SRC-6 (explicit client-initiated resume), AS-SRC-B origin retention.
-
 ***
 
-## Stage 4 — Download, upload, ingestion trigger
+## Stage 4 — Download, upload, ingestion submission
 
 **Inputs.** Approved URL set from `source-approved.md`.
 
-**Actions.** Load [`source-download-and-ingest`](../../skills/source-download-and-ingest/SKILL.md). Run through the download → upload → `run_document` sequence. Set `ingestion_started_at` in STATE.md.
+**Actions.** Load [`source-download-and-ingest`](../../skills/source-download-and-ingest/SKILL.md). Run through the download → upload sequence; ingestion is queued by the knowledge base on upload. Set `ingestion_started_at` in STATE.md.
 
 **Pause boundary.** End of stage 4 = stage 4b pause.
 
@@ -136,10 +130,8 @@ Accepted patterns (case-insensitive, tolerant of surrounding prose):
 
 **Actions.**
 
-1. Post to user: *"Ingestion has been triggered for N documents. Send* *`resume`* *once you are ready; I will verify ingestion before classification."*
+1. Post to user: *"Ingestion has been queued for N documents. Send* *`resume`* *once you are ready; I will verify ingestion before classification."*
 2. Set RunStatus = `paused`, PauseReason = `awaiting-client-resume`, RunStage = `awaiting-ingestion`.
-
-**Traceability.** Q-SRC-6, Q-KB-3.
 
 ***
 
@@ -151,11 +143,11 @@ Accepted patterns (case-insensitive, tolerant of surrounding prose):
 
 1. Poll `doc_infos` for every uploaded doc.
 2. Categorise each doc: Ingested / Failed / Running.
-3. Apply the 60-minute per-document ceiling (Q-KB-5):
+3. Apply the 60-minute per-document ceiling:
    * Failed + timed-out docs are dropped, recorded in `.harness/Archive/sources_excluded.md`.
    * Still-running docs within budget → pause again (`awaiting-ingestion-completion`) and ask the user to wait, with an ETA sketch.
    * Still-running docs past budget → drop with timeout reason.
-4. If every doc is failed/timed out and none ingested → pause with `ingestion-error-client-confirmation-needed` (hard-constraint 3).
+4. If every doc is failed/timed out and none ingested → pause with `ingestion-error-client-confirmation-needed`.
 5. On success (≥ 1 doc ingested, all others resolved), set `ingestion_completed_at`, RunStage = `classification`, RunStatus = `active`.
 
 **Success.** At least one Ingested doc AND all other docs resolved.
@@ -168,7 +160,7 @@ Accepted patterns (case-insensitive, tolerant of surrounding prose):
 
 **Actions.** Load [`lead-agent-subagent-orchestration`](../../skills/lead-agent-subagent-orchestration/SKILL.md).
 
-1. Partition parameters per AS-HARN-D (≤15 per partition).
+1. Partition parameters into batches of ≤15 parameters each (preserving CSV row order).
 2. Write the subagent roster into STATE.md.
 3. Pre-seed each `.harness/SubAgent/<agent-name>.md` with the contract.
 4. Spawn up to 3 subagents concurrently; queue the rest.
@@ -202,12 +194,12 @@ Exit stage when all subagents are archived or failed (with lead-written Rule-4 f
 **Actions.**
 
 1. Assemble `deliverable.json` matching [`../../templates/deliverable.schema.json`](../../templates/deliverable.schema.json):
-   * Header per AS-DEL-A (run id, timestamps, car identity + variant note, resolved trim, CSV hash, KB dataset id, source counts, telemetry timestamps, subagents spawned, non-determinism disclosure).
-   * Legend for SchemaType, Presence, Status, Classification enums (Q-DEL-4).
-   * Summary per Q-DEL-5 (counts + distributions + lists of Conflict / Unable-to-Decide / No Information Found parameter ids).
-   * Telemetry per Q-DEL-5.
-   * `records[]` in CSV row order (AS-DEL-B), one per parameter in `params.csv`.
-   * Footer `sources_excluded` per AS-DEL-C; plus run-level warnings.
+   * Header (run id, timestamps, car identity + variant note, resolved trim, CSV hash, KB dataset id, source counts, telemetry timestamps, subagents spawned, non-determinism disclosure).
+   * Legend for SchemaType, Presence, Status, Classification enums.
+   * Summary (counts + distributions + lists of Conflict / Unable-to-Decide / No Information Found parameter ids).
+   * Telemetry block.
+   * `records[]` in CSV row order, one per parameter in `params.csv`.
+   * Footer `sources_excluded`; plus run-level warnings.
 2. Assemble `deliverable.csv` per [`../../templates/deliverable.csv.columns.md`](../../templates/deliverable.csv.columns.md).
 3. Write both to the run workspace root.
 4. Set RunStage = `deliverable`.
@@ -230,12 +222,7 @@ Exit stage when all subagents are archived or failed (with lead-written Rule-4 f
 
 The error situations from the workflow error overlay apply at every stage. The two dominant ones are:
 
-* **Download failure (Q-KB-4):** handled in stage 4 via 3-retry policy.
-* **Ingestion timeout (Q-KB-5):** handled in stage 5 via 60-minute per-doc ceiling.
+* **Download failure:** handled in stage 4 via 3-retry policy.
+* **Ingestion timeout:** handled in stage 5 via 60-minute per-doc ceiling.
 
 Both produce entries in `.harness/Archive/sources_excluded.md` and the deliverable footer. Neither aborts the run unless *every* approved URL is affected.
-
-## Business-logic trace summary
-
-ARCH-1..4, AS-DEL-A..G, AS-HARN-A..D, AS-KB-A..G, AS-SCOPE-1..2, AS-SRC-A..I, AS-INPUT-A..D,
-Q-INPUT-1..8, Q-SRC-2, Q-SRC-4..7, Q-KB-2..5, Q-KB-7, Q-HARN-1..14, Q-DEL-1..6, Q-SCOPE-1..3.

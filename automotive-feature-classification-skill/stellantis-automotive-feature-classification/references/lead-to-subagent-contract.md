@@ -67,9 +67,9 @@ The JSON shape the lead agent embeds at the top of `.harness/SubAgent/<agent-nam
 
 * **`agent_name`** — matches the filename stem of the working file. Derived from `<category-slug>-<partition-index>`.
 * **`parameter_ids`** — stable id formed by `<category-slug>:<row-index-in-params.csv>`. Used for cross-referencing.
-* **`parameters`** — full self-contained parameter descriptors so the subagent never needs to read `params.csv` again. Criteria cells that are empty in the CSV are emitted as JSON `null`, which is how the subagent knows the tier is not in the applicable set (Q-HARN-4, Invariant 7).
+* **`parameters`** — full self-contained parameter descriptors so the subagent never needs to read `params.csv` again. Criteria cells that are empty in the CSV are emitted as JSON `null`, which is how the subagent knows the tier is not in the applicable set.
 * **`budgets`** — per [`skills/subagent-classification-loop/SKILL.md`](../skills/subagent-classification-loop/SKILL.md). Main loop = query→read→update cycles; fallback loop = targeted hybrid retrieval on still-unresolved parameters.
-* **`tool_allowlist`** — the exact list enforced by the subagent classification skill. Any tool not on this list is a bug (ARCH-4).
+* **`tool_allowlist`** — the exact list enforced by the subagent classification skill. Any tool not on this list is a bug.
 
 ## Writing rule
 

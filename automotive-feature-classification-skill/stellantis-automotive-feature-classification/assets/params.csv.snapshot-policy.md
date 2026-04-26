@@ -1,6 +1,6 @@
 # params.csv Snapshot Policy
 
-Per AS-SCOPE-2 and Q-SCOPE-2, `artifacts/params.csv` is **developer-owned, frozen per run**, and injected into the agent workspace.
+`artifacts/params.csv` is **developer-owned, frozen per run**, and injected into the agent workspace.
 
 ## Rule
 

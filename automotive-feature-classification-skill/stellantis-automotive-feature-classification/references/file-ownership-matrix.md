@@ -14,7 +14,7 @@ Exhaustive per-path access rules. `R` = may read, `W` = may write, `C` = creates
 | `.harness/Category/<category>.md`                 | C W R   | —        | Consolidated per-category STATE; lead-only writer.                    |
 | `.harness/SubAgent/<agent-name>.md`               | C R (pre-seed contract) / W (never after spawn) | R W | Lead seeds it with the contract; subagent writes everything after. |
 | `.harness/Archive/<agent-name>.md`                | C (via move) R | — | Destination of consolidated subagent working files.                   |
-| `.harness/Archive/sources_excluded.md`            | C W R   | —        | Download/ingestion failures (AS-DEL-C).                              |
+| `.harness/Archive/sources_excluded.md`            | C W R   | —        | Download/ingestion failures.                                         |
 | `.harness/advisories/undefined-tier.md`           | W R     | —        | Lead promotes from subagent working files during consolidation.       |
 | `.harness/advisories/out-of-list-findings.md`     | W R     | —        | Same as above.                                                        |
 | `.harness/event-log.md`                           | C W     | —        | Append-only; mirrors STATE.md events.                                 |
@@ -32,7 +32,6 @@ Paths outside the run workspace:
 | `src/templates/*`                                 | R    | R (those listed in §8.2 of `SKILL.md`) | Templates are instantiated, never mutated.   |
 | `src/skills/<skill-name>/SKILL.md`                | R (lead skills) | R (subagent skills) | Loaded per actor per stage.                        |
 | `src/workflows/W1-normal-pipeline-mode-a/**`      | R    | —        | Lead-only.                                                            |
-| `business-logic/**`                               | R    | R (rare; only enums + decision rules reference) | Source of truth; never written from the skill. |
 | `framework-maintenance/**`                        | —    | —        | Touched only by a framework-maintenance agent, not a run-time actor.  |
 
 ## Invariants

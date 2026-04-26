@@ -31,7 +31,7 @@ You may combine approvals and rejections in one message. The agent will pause un
 
 1. You reply with approve/reject decisions.
 2. The agent downloads each approved URL (up to 3 retries per URL).
-3. The agent uploads documents to the knowledge base and triggers `run_document` to start ingestion.
+3. The agent uploads documents to the knowledge base; ingestion is queued automatically by the upload.
 4. The agent **pauses again** after upload and asks you to send `resume` when you are ready for the ingestion-verification check.
 
 See [`src/SKILL.md`](../../SKILL.md) §7 for the full pause/resume protocol.
