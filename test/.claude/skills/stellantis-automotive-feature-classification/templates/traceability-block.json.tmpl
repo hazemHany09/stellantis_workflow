@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "traceability-block.json.tmpl",
+  "title": "Traceability Block",
+  "description": "A single evidence block attached to a per-parameter record.",
+  "type": "object",
+  "required": ["source_name", "source_link", "source_justification", "classification_justification", "kind"],
+  "additionalProperties": false,
+  "properties": {
+    "source_name": {
+      "type": "string",
+      "description": "Human-readable label of the source document (article title, brochure title, page title)."
+    },
+    "source_link": {
+      "type": "string",
+      "format": "uri",
+      "description": "Canonical URL of the source, approved via the approval gate and ingested into the run's KB."
+    },
+    "source_justification": {
+      "type": "string",
+      "description": "Short prose explaining why this source is relevant/authoritative for this parameter."
+    },
+    "classification_justification": {
+      "type": "string",
+      "description": "Short prose explaining what the source contributed to the Presence/Classification decision. Under Rule 2b, records the source's presence stance."
+    },
+    "kind": {
+      "type": "string",
+      "enum": ["clear", "vague"],
+      "description": "TraceabilityBlockKind; see src/references/enums.md. Silent sources never produce a block."
+    },
+    "doc_id": {
+      "type": "string",
+      "description": "Optional RAGFlow document id — used internally during consolidation, dropped from the client-facing deliverable."
+    },
+    "chunk_ids": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Optional chunk ids from `list_chunks` — retained internally for audit; not exposed in deliverable."
+    }
+  }
+}

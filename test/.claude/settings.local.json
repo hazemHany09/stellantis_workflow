@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "mcp__ragflow__create_dataset",
+      "mcp__cloudflare__browser_render_markdown",
+      "mcp__ragflow__upload_with_metadata",
+      "Bash(mkdir -p \"C:\\\\computer\\\\programming\\\\infomineo\\\\Stellantis\\\\custom_skills\\\\automotive-feature-classification-skill-modifications\\\\iteration-1\")",
+      "Read(//c/computer/programming/infomineo/Stellantis/custom_skills/**)",
+      "mcp__serper__google_search",
+      "mcp__cloudflare__browser_render_content",
+      "mcp__serper__webpage_scrape",
+      "Bash(mcp__serper__google_search *)",
+      "mcp__cloudflare__browser_render_pdf",
+      "Bash(curl -L \"https://s3.amazonaws.com/chryslermedia.iconicweb.com/mediasite/specs/2024_JP_Wrangler_SP5fcgnuvfl399adn0lfjsosc427.pdf\" -o /tmp/jeep_wrangler_2024_specs.pdf)",
+      "Read(//tmp/**)",
+      "PowerShell($pdf_b64 = Get-Content \".harness\\\\downloads\\\\jeep_wrangler_2024_specs.pdf.b64\" -Raw; $pdf_b64 = $pdf_b64.Trim\\(\\); Write-Host \"Base64 size: $\\($pdf_b64.Length\\) characters\"; Write-Host \"First 50 chars: $\\($pdf_b64.Substring\\(0, 50\\)\\)\")",
+      "mcp__ragflow__list_docs"
+    ]
+  }
+}

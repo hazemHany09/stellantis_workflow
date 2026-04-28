@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "intermediate-parameter-record.json.tmpl",
+  "title": "Intermediate Parameter Record",
+  "description": "Per-parameter record emitted by a subagent inside its result envelope. Validated by the lead before consolidation.",
+  "type": "object",
+  "required": ["parameter_id", "category", "parameter_name", "schema_type", "presence", "status", "classification", "decision_rule", "traceability_blocks"],
+  "additionalProperties": false,
+  "properties": {
+    "parameter_id": { "type": "string" },
+    "category": { "type": "string" },
+    "parameter_name": {
+      "type": "string",
+      "description": "Optimised Parameter Name from params.csv."
+    },
+    "parameter_name_internal": {
+      "type": "string",
+      "description": "Internal Parameter name from params.csv; audit-only, dropped from final deliverable."
+    },
+    "schema_type": {
+      "type": "string",
+      "enum": ["B/M/H", "B/H", "M/H", "B/M", "H", "M", "B"]
+    },
+    "presence": {
+      "type": "string",
+      "enum": ["Yes", "No", "Disputed", "No Information Found"]
+    },
+    "status": {
+      "type": "string",
+      "enum": ["Success", "Conflict", "Unable to Decide"]
+    },
+    "classification": {
+      "type": "string",
+      "enum": ["High", "Medium", "Basic", "Empty"]
+    },
+    "decision_rule": {
+      "type": "string",
+      "enum": ["Rule-1", "Rule-2a", "Rule-2b", "Rule-3", "Rule-4", "Rule-5"]
+    },
+    "traceability_blocks": {
+      "type": "array",
+      "items": { "$ref": "traceability-block.json.tmpl" },
+      "description": "Zero or more traceability blocks. Cardinality: Rule-4 → zero blocks; Rule-1/5 → one or more; Rule-2a/2b → ≥2 clear blocks."
+    },
+    "loop_stats": {
+      "type": "object",
+      "properties": {
+        "main_loop_iterations_used": { "type": "integer", "minimum": 0, "maximum": 3 },
+        "fallback_loop_iterations_used": { "type": "integer", "minimum": 0, "maximum": 3 },
+        "resolved_in": { "type": "string", "enum": ["main", "fallback", "neither"] }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "description": "Invariant 4 (06-harness-interface.md): classification is non-Empty only when status=Success and presence=Yes.",
+      "if": { "properties": { "classification": { "not": { "const": "Empty" } } } },
+      "then": { "properties": { "status": { "const": "Success" }, "presence": { "const": "Yes" } } }
+    },
+    {
+      "description": "Master decision matrix (10-decision-rules.md). One decision_rule per (presence, status) combination.",
+      "anyOf": [
+        { "properties": { "decision_rule": { "const": "Rule-1" },  "presence": { "const": "Yes" },                  "status": { "const": "Success" } } },
+        { "properties": { "decision_rule": { "const": "Rule-5" },  "presence": { "const": "No" },                   "status": { "const": "Success" },          "classification": { "const": "Empty" } } },
+        { "properties": { "decision_rule": { "const": "Rule-2a" }, "presence": { "const": "Yes" },                  "status": { "const": "Conflict" },         "classification": { "const": "Empty" } } },
+        { "properties": { "decision_rule": { "const": "Rule-2b" }, "presence": { "const": "Disputed" },             "status": { "const": "Conflict" },         "classification": { "const": "Empty" } } },
+        { "properties": { "decision_rule": { "const": "Rule-3" },  "presence": { "const": "Yes" },                  "status": { "const": "Unable to Decide" }, "classification": { "const": "Empty" } } },
+        { "properties": { "decision_rule": { "const": "Rule-4" },  "presence": { "const": "No Information Found" }, "status": { "const": "Unable to Decide" }, "classification": { "const": "Empty" },  "traceability_blocks": { "maxItems": 0 } } }
+      ]
+    }
+  ]
+}

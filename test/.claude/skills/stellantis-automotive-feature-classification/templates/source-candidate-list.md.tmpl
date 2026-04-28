@@ -1,0 +1,37 @@
+# Source Candidate List — Template
+
+<!--
+Path: runs/<run-id>/source-candidate-list.md
+Posted to the user verbatim as the approval-gate message. The user replies in free text:
+  • `approve all`
+  • `approve 1,3,5`
+  • `reject 2 — off-target year`
+The lead parses that reply and writes `source-approved.md`.
+-->
+
+# Source candidate list — <<brand>> <<model>> <<model_year>> <<market_canonical>>
+
+Run ID: `<<run-id>>` · Workflow: `<<W1-normal-pipeline-mode-a>>` · Mode: `<<Mode A — client-supplied \| Mode B — agent-discovered>>`
+
+The agent has identified the candidate sources below for your review. Please reply with **one** of:
+
+- `approve all` — approve every candidate below.
+- `approve <indexes>` — approve only the listed indexes (comma-separated). Unlisted candidates are treated as rejected.
+- `reject <indexes> — <reason>` — reject specific candidates; approve the rest.
+
+You may combine approvals and rejections in one message. The agent will pause until your reply arrives.
+
+## Candidates
+
+| # | URL                                     | Title                  | Origin  | Why selected                                                 | Excerpt                                      |
+| - | :-------------------------------------- | :--------------------- | :------ | :----------------------------------------------------------- | :------------------------------------------- |
+| 1 | <<canonical-url>>                       | <<title>>              | `<<client \| agent>>` | <<one-sentence rationale>>                      | <<short excerpt, ≤ 240 chars>>               |
+
+## What happens next
+
+1. You reply with approve/reject decisions.
+2. The agent downloads each approved URL (up to 3 retries per URL).
+3. The agent uploads documents to the knowledge base; ingestion is queued automatically by the upload.
+4. The agent **pauses again** after upload and asks you to send `resume` when you are ready for the ingestion-verification check.
+
+See [`src/SKILL.md`](../../SKILL.md) §7 for the full pause/resume protocol.

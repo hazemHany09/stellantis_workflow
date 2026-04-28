@@ -1,0 +1,54 @@
+# Category STATE — Template
+
+<!-- One file per category. Path: runs/<run-id>/.harness/Category/<category>.md -->
+
+# Category STATE — <<category>>
+
+## Header
+
+| Field                 | Value                                      |
+| :-------------------- | :----------------------------------------- |
+| Category              | `<<category>>`                             |
+| Run ID                | `<<run-id>>`                               |
+| Params in category    | `<<n>>`                                    |
+| Subagents assigned    | `<<list of agent names>>`                  |
+| Consolidation status  | `<<n>> / <<total>> parameters consolidated` |
+| Last updated (UTC)    | `<<ISO-8601>>`                             |
+
+## Per-parameter consolidated records
+
+One row per parameter. Populated by the lead as subagent envelopes are consolidated.
+
+| # | Parameter (optimised) | Schema type | Presence | Status | Classification | Rule     | Traceability (N blocks) | Source agent |
+| - | :-------------------- | :---------- | :------- | :----- | :------------- | :------- | :---------------------- | :----------- |
+| 1 | `<<name_optimised>>`  | `<<B/H...>>` | `<<e>>` | `<<e>>` | `<<e>>`       | `<<Rule-n>>` | `<<n>>`             | `<<agent>>`  |
+
+## Full record detail
+
+For each parameter, a block with the intermediate record JSON (validated against `src/templates/intermediate-parameter-record.json.tmpl`) and its traceability blocks rendered human-readably.
+
+### <<name_optimised>>
+
+<!-- Intermediate record JSON (as consolidated) -->
+```json
+{ ...see intermediate-parameter-record.json.tmpl... }
+```
+
+**Traceability blocks**
+
+1. *<<source_name>>* — [link](<<source_link>>)
+   - **Source justification.** <<text>>
+   - **Classification justification.** <<text>>
+   - **Kind.** `<<clear | vague>>`
+
+## Warnings promoted from subagents
+
+One bullet per warning with `scope ∈ {parameter, category}` from a subagent envelope.
+
+- `<<ISO>>` · agent `<<agent-name>>` · parameter `<<id or —>>` · `<<message>>`
+
+## Not-yet-consolidated parameters
+
+List of parameter ids still waiting on a subagent. Removed as each consolidates.
+
+- `<<parameter_id>>` — assigned to `<<agent-name>>` (`<<SubagentStatus>>`)

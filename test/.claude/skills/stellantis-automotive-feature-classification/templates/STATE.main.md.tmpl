@@ -1,0 +1,119 @@
+# Main STATE.md — Template
+
+<!-- Replace every <<placeholder>> with concrete values. Preserve section order. -->
+
+# Run STATE — <<brand>> <<model>> <<model_year>> <<market_canonical>>
+
+## Header
+
+| Field                            | Value                                                    |
+| :------------------------------- | :------------------------------------------------------- |
+| Run ID                           | `<<run-id>>`                                             |
+| Submission date (UTC)            | `<<ISO-8601>>`                                           |
+| Last-run date (UTC)              | `<<ISO-8601>>`                                           |
+| Workflow                         | `<<W1-normal-pipeline-mode-a \| ... >>`                  |
+| Run stage (`RunStage`)           | `<<one of src/references/enums.md::RunStage>>`           |
+| Run status (`RunStatus`)         | `<<active \| paused \| complete \| failed>>`             |
+| Pause reason (`PauseReason`)     | `<<one of enums.md::PauseReason, or — if active>>`       |
+| Paused at (UTC)                  | `<<ISO-8601 or —>>`                                      |
+| Resumed at (UTC)                 | `<<ISO-8601 or —>>`                                      |
+| Brand                            | `<<brand>>`                                              |
+| Model                            | `<<model>>`                                              |
+| Model year                       | `<<integer>>`                                            |
+| Market (as submitted)            | `<<string>>`                                             |
+| Market (canonical)               | `<<ISO alpha-2 or zone code>>`                           |
+| Resolved full-option trim        | `<<string or "auto-selected: <name>">>`                  |
+| KB dataset id                    | `<<ragflow dataset id>>`                                 |
+| Params CSV path                  | `runs/<<run-id>>/params.csv`                             |
+| Params CSV sha256                | `<<hex>>`                                                |
+| Total parameters in CSV          | `<<integer>>`                                            |
+
+## Summary counts
+
+Updated by the lead after every consolidation.
+
+| Bucket                               | Count |
+| :----------------------------------- | :---- |
+| Total parameters                     | `<<n>>` |
+| Presence = Yes                       | `<<n>>` |
+| Presence = No                        | `<<n>>` |
+| Presence = Disputed                  | `<<n>>` |
+| Presence = No Information Found      | `<<n>>` |
+| Status = Success                     | `<<n>>` |
+| Status = Conflict                    | `<<n>>` |
+| Status = Unable to Decide            | `<<n>>` |
+| Classification = High                | `<<n>>` |
+| Classification = Medium              | `<<n>>` |
+| Classification = Basic               | `<<n>>` |
+| Classification = Empty               | `<<n>>` |
+| Not yet classified (pending subagent) | `<<n>>` |
+| Failed records (subagent failure)    | `<<n>>` |
+
+## Source stats
+
+| Bucket                                   | Count |
+| :--------------------------------------- | :---- |
+| Candidates flagged                       | `<<n>>` |
+| Approved by client                       | `<<n>>` |
+| Rejected by client                       | `<<n>>` |
+| Dropped — paywall                        | `<<n>>` |
+| Dropped — duplicate                      | `<<n>>` |
+| Downloaded                               | `<<n>>` |
+| Ingested                                 | `<<n>>` |
+| Dropped — download failure               | `<<n>>` |
+| Dropped — ingestion timeout              | `<<n>>` |
+
+## Category roster
+
+| Category   | Params | Subagents | Consolidated | Status      |
+| :--------- | :----- | :-------- | :----------- | :---------- |
+| `<<cat>>`  | `<<n>>` | `<<list of agent-names>>` | `<<n>> / <<total>>` | `<<RunStage-ish>>` |
+
+## Subagent roster
+
+| Agent name  | Category | Parameters | Status (`SubagentStatus`) | Spawned    | Completed  |
+| :---------- | :------- | :--------- | :------------------------ | :--------- | :--------- |
+| `<<name>>`  | `<<cat>>` | `<<n>>`   | `<<value>>`               | `<<ISO>>`  | `<<ISO>>`  |
+
+## Loaded skills
+
+Consolidated by lead agent as skills are loaded at each stage. Split into lead-only and subagent-reported.
+
+### Lead-loaded skills (preflight + operational)
+
+| Skill name | Stage loaded | Purpose |
+| :--------- | :----------- | :------ |
+| `stellantis-domain-context` | preflight | Shared vocabulary, mission, invariants |
+| `<<skill-name>>` | `<<stage>>` | `<<short role>>` |
+
+### Subagent-loaded skills (consolidated from result envelopes)
+
+| Agent name | Skills loaded |
+| :--------- | :------------ |
+| `<<name>>` | `stellantis-domain-context`, `stellantis-decision-rules`, `<<other>>` |
+
+## Decisions made during this run
+
+One line per notable decision — e.g. trim auto-selection, market canonicalisation, paywall drops, client approval resolution, ingestion timeouts.
+
+- `<<ISO>>` — `<<short description>>`
+
+## Event log
+
+Append-only. Mirrored into `.harness/event-log.md`.
+
+- `<<ISO>>` · `<<stage>>` · `<<event>>`
+
+## Pointers
+
+- Workflow: `<<src/workflows/...>>`
+- Frozen CSV: `runs/<<run-id>>/params.csv`
+- Deliverable (JSON): `runs/<<run-id>>/deliverable.json`
+- Deliverable (CSV): `runs/<<run-id>>/deliverable.csv`
+- Source candidate list: `runs/<<run-id>>/source-candidate-list.md`
+- Approved sources: `runs/<<run-id>>/source-approved.md`
+- Category STATEs: `runs/<<run-id>>/.harness/Category/`
+- Subagent files (live): `runs/<<run-id>>/.harness/SubAgent/`
+- Archive: `runs/<<run-id>>/.harness/Archive/`
+- Sources excluded: `runs/<<run-id>>/.harness/Archive/sources_excluded.md`
+- Advisories: `runs/<<run-id>>/.harness/advisories/`

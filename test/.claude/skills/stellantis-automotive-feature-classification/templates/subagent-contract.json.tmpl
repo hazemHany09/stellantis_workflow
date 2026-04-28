@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "subagent-contract.json.tmpl",
+  "title": "Subagent Contract (Lead → Subagent)",
+  "description": "Structural schema of the contract block the lead embeds at the top of the subagent working file. Shape authority: src/references/lead-to-subagent-contract.md.",
+  "type": "object",
+  "required": [
+    "contract_version", "run_id", "agent_name", "agent_working_file",
+    "kb_dataset_id", "car_identity", "category", "partition_index",
+    "parameter_ids", "parameters", "budgets", "rules_refs",
+    "output_schemas", "tool_allowlist", "created_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "contract_version": { "type": "string", "const": "1.0" },
+    "run_id": { "type": "string" },
+    "agent_name": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*[a-z0-9]-[0-9]+$" },
+    "agent_working_file": { "type": "string" },
+    "kb_dataset_id": { "type": "string" },
+    "car_identity": {
+      "type": "object",
+      "required": ["brand", "model", "model_year", "market_input", "market_canonical", "resolved_trim"],
+      "additionalProperties": false,
+      "properties": {
+        "brand":            { "type": "string" },
+        "model":            { "type": "string" },
+        "model_year":       { "type": "integer" },
+        "market_input":     { "type": "string" },
+        "market_canonical": { "type": "string" },
+        "resolved_trim":    { "type": "string" }
+      }
+    },
+    "category": { "type": "string" },
+    "partition_index": { "type": "integer", "minimum": 1 },
+    "parameter_ids": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1,
+      "maxItems": 15
+    },
+    "parameters": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 15,
+      "items": {
+        "type": "object",
+        "required": ["id", "name_internal", "name_optimised", "description", "schema_type", "criteria"],
+        "additionalProperties": false,
+        "properties": {
+          "id":                   { "type": "string" },
+          "name_internal":        { "type": "string" },
+          "name_optimised":       { "type": "string" },
+          "description":          { "type": "string" },
+          "category_description": { "type": ["string", "null"] },
+          "schema_type":          { "type": "string", "enum": ["B/M/H", "B/H", "M/H", "B/M", "H", "M", "B"] },
+          "criteria": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "Basic":  { "type": ["string", "null"] },
+              "Medium": { "type": ["string", "null"] },
+              "High":   { "type": ["string", "null"] }
+            }
+          }
+        }
+      }
+    },
+    "budgets": {
+      "type": "object",
+      "required": ["main_loop_iterations_max", "fallback_loop_iterations_max"],
+      "additionalProperties": false,
+      "properties": {
+        "main_loop_iterations_max":     { "type": "integer", "const": 3 },
+        "fallback_loop_iterations_max": { "type": "integer", "const": 3 }
+      }
+    },
+    "rules_refs": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "decision_rules":    { "type": "string" },
+        "harness_interface": { "type": "string" },
+        "enums":             { "type": "string" }
+      }
+    },
+    "output_schemas": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "per_parameter":        { "type": "string" },
+        "result_envelope":      { "type": "string" },
+        "traceability_block":   { "type": "string" }
+      }
+    },
+    "tool_allowlist": {
+      "type": "array",
+      "items": { "type": "string" },
+      "uniqueItems": true
+    },
+    "created_at": { "type": "string", "format": "date-time" }
+  }
+}
