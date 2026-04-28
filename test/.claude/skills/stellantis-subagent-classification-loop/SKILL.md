@@ -17,7 +17,7 @@ tools:
   - retrieval
   - retrieve_knowledge_graph
   - list_chunks
-  - download_attachment
+  - ragflow_download
   - doc_infos
   - get_metadata_summary
 ---
@@ -59,12 +59,12 @@ The subagent is invoked with the absolute path of its working file as the first 
 Only the tools in the contract's `tool_allowlist`. The authoritative set is:
 
 * `retrieval`, `retrieve_knowledge_graph`
-* `list_chunks`, `download_attachment`
+* `list_chunks`, `ragflow_download`
 * `doc_infos`, `get_metadata_summary`
 
 The subagent never writes document metadata directly. It **stages** metadata patches inside its result envelope; the lead applies them via `batch_update_doc_metadata` during consolidation.
 
-**Forbidden:** `google_search`, `google_search_news`, `google_search_images`, `google_search_videos`, `google_search_autocomplete`, any `browser_render_*` or `browser_crawl_*` tool, `create_dataset`, `delete_datasets`, `upload_with_metadata`, `delete_docs`, `set_doc_metadata`, `batch_update_doc_metadata`. Also forbidden: reading any file under `.harness/Category/`, other `.harness/SubAgent/` files, or the main `STATE.md`.
+**Forbidden:** `google_search`, `google_search_news`, `google_search_images`, `google_search_videos`, `google_search_autocomplete`, any `browser_render_*` or `browser_crawl_*` tool, `fetch_url`, `create_dataset`, `delete_datasets`, `ragflow_upload`, `upload_with_metadata`, `delete_docs`, `set_doc_metadata`, `batch_update_doc_metadata`. Also forbidden: reading any file under `.harness/Category/`, other `.harness/SubAgent/` files, or the main `STATE.md`.
 
 ## Main loop — up to 3 iterations (budget from contract)
 
@@ -81,7 +81,7 @@ Alternative: call `retrieve_knowledge_graph` when parameters cross-reference ent
 For each shortlisted `doc_id`:
 
 1. Call `list_chunks(doc_id)` to enumerate chunks.
-2. Call `download_attachment` (or read the top-ranked chunks from `retrieval` output directly) for the chunks that match the parameter's description.
+2. To read document content: first check if `.harness/downloads/<doc_id>` (or a previously saved filename for this doc) already exists — reuse it if so (cache hit). Otherwise call `ragflow_download(doc_ids=[doc_id], output_dir=".harness/downloads/")`, which saves the file to disk and returns the path. Read only the chunks that match the parameter's description. Alternatively, use the top-ranked chunks returned directly by `retrieval` output when they contain sufficient text.
 3. Skim. Classify each source per the decision-rule taxonomy:
    * `silent` — parameter not mentioned at all. Discard.
    * `vague` — parameter mentioned but level not clearly mappable.
@@ -169,7 +169,7 @@ Assemble these into the result envelope at the tail of the working file, set `"s
 | :------------------------------------------ | :----------------------------------------------------------------------- |
 | A required contract field is missing        | Set envelope `"status": "failed"` with `reason`; return.                 |
 | KB retrieval returns nothing, ever          | Produce Rule-4 for every parameter; return `consolidated-ready`.         |
-| Download of a chunk fails                   | Try once more; on repeat failure, skip that chunk; note in working file. |
+| `ragflow_download` fails for a doc          | Try once more; on repeat failure, skip that doc; note in working file. |
 | Cannot build a valid record for a parameter | Produce Rule-4 for that parameter; add a warning; return.                |
 
 ## Reporting loaded skills (required)

@@ -42,7 +42,7 @@ The KB is the exclusive evidence substrate during classification. This skill spe
 
 ## Upload approach
 
-**All files are uploaded via Python scripts running on the filesystem.** File content (binary or base64) never passes through the LLM context window. The lead writes a per-document `upload_<slug>.py` script, executes it via `run_python_file`, reads `doc_id=<id>` from stdout, and discards the script. See `stellantis-source-download-and-ingest` for the exact script pattern.
+**All files are uploaded via `ragflow_upload`.** File content (binary or base64 encoding) is handled internally by the tool — the lead never reads file content or passes it through the LLM context window. The lead calls `ragflow_upload(path="...", dataset_id="...", filename="...", metadata={...})`, reads the `id` field from the returned JSON as `doc_id`, and records it in STATE.md. No Python scripts are needed. See `stellantis-source-download-and-ingest` for the full upload sequence and required metadata fields.
 
 ## Capability categories
 
@@ -52,8 +52,16 @@ The KB must offer four distinct capability categories. The framework relies only
 | :--- | :--- | :--- |
 | **Dataset management** | Create dataset, list datasets, get/update/delete dataset | Lead (preflight, archival) |
 | **Document management** | Upload with metadata, list, info-poll, delete, set/batch-update metadata | Lead |
-| **Retrieval** | Semantic search, optional knowledge-graph query, list chunks, download attachment | Subagent (read-only); Lead (rare) |
+| **Retrieval** | Semantic search, optional knowledge-graph query, list chunks, download document to local directory (`ragflow_download`) | Subagent (read-only); Lead (rare) |
 | **Metadata summary** | Aggregate metadata over the dataset | Both, read-only |
+
+## Shared download directory
+
+All downloaded files — whether fetched by the lead during the download phase or by a subagent during retrieval — are saved to **`.harness/downloads/`**. This directory serves as both a cache and an audit trail.
+
+**Cache-check directive (applies to both lead and subagent):** Before issuing any download tool call (`fetch_url` for the lead, `ragflow_download` for the subagent), check if the target file already exists in `.harness/downloads/`. If it does, reuse it. Log "Cache hit: reusing `.harness/downloads/<filename>`" and skip the network call.
+
+This prevents redundant downloads and keeps the run reproducible across pauses and resumes.
 
 ## Scoping rule
 
@@ -103,7 +111,7 @@ Metadata enables citation traceability and cycle-aware retrieval. The deliverabl
 
 The subagent is the primary retrieval consumer. The contract:
 
-1. **Tools allowed.** Only retrieval, knowledge-graph query, list chunks, download attachment, document info, metadata summary. No web search, no browser rendering. Ever.
+1. **Tools allowed.** Only `retrieval`, `retrieve_knowledge_graph`, `list_chunks`, `ragflow_download`, `doc_infos`, `get_metadata_summary`. No web search, no browser rendering, no `fetch_url`. Ever.
 2. **Iteration budget.** Up to 3 main retrieval iterations per parameter, plus a 3-iteration fallback if the main iterations yield no usable evidence. Beyond that, emit Rule 4.
 3. **Cycle filter (gap-fill).** When the active workflow is a gap-fill cycle `N`, retrieval may filter on `cycle ∈ {1, …, N}`. The original cycle's evidence remains visible.
 4. **No web fallback.** A failed retrieval becomes a Rule 4 record, not a web search.

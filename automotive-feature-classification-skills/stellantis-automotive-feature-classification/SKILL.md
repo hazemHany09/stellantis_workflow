@@ -122,7 +122,7 @@ High-level split:
 | Archive consolidated subagent files                        | ✅          | —        |
 | Emit deliverable.json + deliverable.csv                    | ✅          | —        |
 
-**Hard rule:** subagents **never** use open-web search or browser rendering. Their only tools are the knowledge-base retrieval/inspection set — `retrieval`, `retrieve_knowledge_graph`, `list_chunks`, `download_attachment`, `doc_infos`, `get_metadata_summary`.
+**Hard rule:** subagents **never** use open-web search, browser rendering, or `fetch_url`. Their only tools are the knowledge-base retrieval/inspection set — `retrieval`, `retrieve_knowledge_graph`, `list_chunks`, `ragflow_download`, `doc_infos`, `get_metadata_summary`.
 
 **Concurrency:** maximum **3 subagents running concurrently** (enforced by `lead-agent-subagent-orchestration` skill).
 
@@ -215,12 +215,13 @@ Per-actor permissions (tool bindings in sub-skill files):
 | Capability          | Tools                                                                                                                       | Lead      | Subagent          |
 |:---                 |:---                                                                                                                         |:---       |:---               |
 | Open-web search     | `google_search`, `google_search_news`, `google_search_images`, `google_search_videos`, `google_search_autocomplete`         | ✅        | ❌                |
-| Browser rendering   | `browser_render_content`, `browser_render_markdown`, `browser_render_pdf`, `browser_render_scrape`, `browser_render_links`  | ✅        | ❌                |
+| Web content fetch   | `fetch_url` — saves webpage (→ Markdown) or binary (PDF/DOCX/XLSX/PPTX) to `.harness/downloads/`. No video/YouTube.       | ✅        | ❌                |
+| Browser (advanced)  | `browser_render_content`, `browser_render_scrape`, `browser_render_links` (use `fetch_url` for download use-cases)         | ✅ rare   | ❌                |
 | Crawl workflow      | `browser_crawl_create`, `browser_crawl_status`, `browser_crawl_cancel`                                                      | ✅        | ❌                |
 | Dataset mgmt        | `create_dataset`, `list_datasets`, `get_dataset_detail`, `update_dataset`, `delete_datasets`                                | ✅        | ❌                |
-| Document mgmt       | `upload_with_metadata`, `list_docs`, `doc_infos`, `delete_docs`, `rename_doc`, `set_doc_metadata`, `batch_update_doc_metadata` | ✅ write  | ❌                |
+| Document mgmt       | `ragflow_upload`, `list_docs`, `doc_infos`, `delete_docs`, `rename_doc`, `set_doc_metadata`, `batch_update_doc_metadata`    | ✅ write  | ❌                |
 | Metadata summary    | `get_metadata_summary`                                                                                                      | ✅        | ✅ read-only      |
-| Chunk inspection    | `list_chunks`, `download_attachment`                                                                                        | ✅ rare   | ✅                |
+| Chunk inspection    | `list_chunks`, `ragflow_download` (saves to `.harness/downloads/`)                                                          | ✅ rare   | ✅                |
 | Retrieval           | `retrieval`, `retrieve_knowledge_graph`                                                                                     | ✅ rare   | ✅                |
 | Tag operations      | `list_tags`, `set_tags`                                                                                                     | ✅        | ❌                |
 

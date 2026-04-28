@@ -14,10 +14,8 @@ provides:
   - KB-dataset-with-documents
   - sources_excluded.md
 tools:
-  - browser_render_markdown
-  - browser_render_content
-  - run_python_file
-  - upload_with_metadata
+  - fetch_url
+  - ragflow_upload
   - doc_infos
   - list_docs
   - get_metadata_summary
@@ -41,7 +39,7 @@ Feeds into `stellantis-lead-agent-subagent-orchestration` after ingestion verifi
 
 ## Overview
 
-Downloads each approved URL to the appropriate file format, **saves to `.harness/downloads/` for quality verification**, then uploads to the knowledge-base dataset with structured metadata (which queues each document for ingestion). Enforces a **completion gate**: cannot proceed until ALL approved sources are successfully uploaded to the KB (with per-source 5-minute timeout). Then pauses for user confirmation before verifying ingestion status against the 60-minute per-document ceiling.
+Downloads each approved URL to `.harness/downloads/` using `fetch_url`, then uploads to the knowledge-base dataset via `ragflow_upload` with structured metadata (which queues each document for ingestion). File content never flows through the LLM context — `fetch_url` saves to disk and returns the path; `ragflow_upload` reads from disk and handles encoding internally. Enforces a **completion gate**: cannot proceed until ALL approved sources are successfully uploaded to the KB (with per-source 5-minute timeout). Then pauses for user confirmation before verifying ingestion status against the 60-minute per-document ceiling.
 
 ## When this runs
 
@@ -57,51 +55,34 @@ W1 stages 4–5. After the client has approved at least one URL and sent the imp
 
 ## Tools allowed
 
-* **Download:** `browser_render_markdown`, `browser_render_pdf`, `browser_render_content` (fallback for already-static binaries).
-* **Upload + ingestion submission:** `upload_with_metadata` — ingestion is queued by the knowledge base as part of upload.
+* **Download:** `fetch_url` — fetches any URL and saves to `.harness/downloads/`. Handles both web page rendering (→ Markdown) and binary file download (PDF, DOCX, XLSX, PPTX). Never reads the saved content into context.
+* **Upload + ingestion submission:** `ragflow_upload` — reads file from disk, handles encoding internally, uploads to the KB dataset with metadata. Returns JSON with `id` (= `doc_id`).
 * **Polling:** `doc_infos`, `list_docs`, `get_metadata_summary`.
 * **Cleanup:** `delete_docs` (only to remove a document that ingestion irrecoverably failed on).
 
 ## Download decision tree
 
-Given an approved URL, detect file type from the URL extension and/or a lightweight `browser_render_content` Content-Type probe:
+Before calling `fetch_url` for any URL, **check the cache first**: derive `<slug>` from the canonicalised URL's host + path (stripped of punctuation, max 100 chars). If `.harness/downloads/<slug>.<ext>` already exists, skip the download and use the cached file — log "Cache hit: reusing existing file".
 
-| Detected type                          | Action                                                                                                       |
-| :------------------------------------- | :----------------------------------------------------------------------------------------------------------- |
-| HTML / rendered web page               | `browser_render_markdown` → save as `.harness/downloads/<slug>.md`.                                          |
-| PDF (`.pdf`)                           | **Python download** — write a script to `fetch_<slug>.py`, run via `run_python_file`, saves binary to `.harness/downloads/<slug>.pdf`. **Do not** use `browser_render_pdf`. |
-| Presentation (`.ppt`, `.pptx`, `.key`) | **Python download** — write a script to `fetch_<slug>.py`, run via `run_python_file`, saves binary to `.harness/downloads/<slug>.<ext>`. **Do not** convert to markdown. |
-| Spreadsheet (`.xls`, `.xlsx`, `.csv`)  | **Python download** — write a script to `fetch_<slug>.py`, run via `run_python_file`, saves binary to `.harness/downloads/<slug>.<ext>`. **Do not** convert to markdown. |
-| Image / video                          | Not supported; record in `.harness/sources_excluded.md` with `stage = download`, reason `unsupported-type`, and skip. |
-| Unknown                                | Try `browser_render_markdown`; on failure, Python download to `.harness/downloads/`; on second failure, record as `sources_excluded`. |
+Given an approved URL, detect file type from the URL extension:
+
+| Detected type                          | `fetch_url` call                                                                                  | Saved as                                 |
+| :------------------------------------- | :------------------------------------------------------------------------------------------------ | :--------------------------------------- |
+| HTML / rendered web page (no extension or `.html`, `.htm`) | `fetch_url(url=url, output_dir=".harness/downloads/")` — auto-detects as webpage | `.harness/downloads/<slug>.md`           |
+| PDF (`.pdf`)                           | `fetch_url(url=url, output_dir=".harness/downloads/", type="pdf")`                                | `.harness/downloads/<slug>.pdf`          |
+| Word document (`.doc`, `.docx`)        | `fetch_url(url=url, output_dir=".harness/downloads/", type="docx")`                               | `.harness/downloads/<slug>.docx`         |
+| Spreadsheet (`.xls`, `.xlsx`)          | `fetch_url(url=url, output_dir=".harness/downloads/", type="xlsx")`                               | `.harness/downloads/<slug>.xlsx`         |
+| Presentation (`.ppt`, `.pptx`)         | `fetch_url(url=url, output_dir=".harness/downloads/", type="pptx")`                               | `.harness/downloads/<slug>.pptx`         |
+| **Video / YouTube / streaming media**  | **Not supported.** Record in `.harness/sources_excluded.md` with `stage = download`, reason `unsupported-type`, and skip immediately. Do not attempt `fetch_url`. | — |
+| Unknown extension                      | `fetch_url(url=url, output_dir=".harness/downloads/")` (defaults to webpage); on failure, try with explicit `type="pdf"`; on second failure, record as `sources_excluded`. | `.harness/downloads/<slug>.md` or `.pdf` |
 
 `<slug>` = the canonicalised URL's host + path stripped of punctuation; max 100 chars.
 
-### Python download script pattern
-
-For every binary file (PDF, PPTX, XLSX, etc.), write the following script to `.harness/downloads/fetch_<slug>.py` and run it via `run_python_file`. This keeps binary content off the context window entirely.
-
-```python
-# .harness/downloads/fetch_<slug>.py
-import requests, os, sys
-
-url = "<original_url>"
-dest = ".harness/downloads/<slug>.<ext>"
-
-os.makedirs(os.path.dirname(dest), exist_ok=True)
-resp = requests.get(url, timeout=60, stream=True)
-resp.raise_for_status()
-with open(dest, "wb") as f:
-    for chunk in resp.iter_content(chunk_size=65536):
-        f.write(chunk)
-print(f"Downloaded {dest} ({os.path.getsize(dest)} bytes)")
-```
-
-Delete the script file after successful execution.
+`fetch_url` returns the saved file path (a `/mnt/user-data/workspace/...` virtual path). The lead agent records this path in `.harness/STATE.md` — it never reads the file content into the context window.
 
 ## Retry policy — Download
 
-**3 retries with exponential backoff (1s, 2s, 4s)** for each URL's download to filesystem. On final failure, add to `.harness/sources_excluded.md` with `stage = download, reason = <short>` and continue. The run is never aborted for a single failure.
+**3 retries with exponential backoff (1s, 2s, 4s)** for each URL's `fetch_url` call. On final failure, add to `.harness/sources_excluded.md` with `stage = download, reason = <short>` and continue. The run is never aborted for a single failure.
 
 **Update `.harness/STATE.md` after each download attempt:**
 - Log download start (URL, timestamp)
@@ -113,67 +94,43 @@ Delete the script file after successful execution.
 **For each successfully downloaded file:**
 
 1. **Start upload timer** for this URL (5-minute ceiling).
-2. **Prepare metadata** with canonical_url, source_host, origin, doc_type, car_identity, etc.
-3. **Convert to base64 and upload via Python** — write a script to `.harness/downloads/upload_<slug>.py`, run it via `run_python_file`. The script reads the local file, encodes it as base64, and POSTs it to the RAGFlow MCP API directly. File content never appears in the LLM context window. See the **Python upload script pattern** below.
+2. **Prepare metadata** dict (see fields below).
+3. **Call `ragflow_upload`** directly — no Python script needed; `ragflow_upload` handles base64 encoding internally:
+   ```
+   ragflow_upload(
+       path=".harness/downloads/<slug>.<ext>",
+       dataset_id=<kb_dataset_id>,
+       filename="<slug>.<ext>",
+       metadata={...}
+   )
+   ```
 4. **Log upload attempt** to `.harness/STATE.md`: timestamp, URL, file path.
-5. **On success:** Record returned `doc_id` (printed by the script to stdout) in `.harness/STATE.md` source roster. Log: "Upload succeeded, doc_id=<id>".
+5. **On success:** Read `id` from the returned JSON; record as `doc_id` in `.harness/STATE.md` source roster. Log: "Upload succeeded, doc_id=<id>".
 6. **On failure:**
    - If time remaining < 5 minutes: **Retry up to 3 times** with exponential backoff (1s, 2s, 4s).
    - If 5-minute ceiling exceeded: **Drop the URL.** Record in `.harness/sources_excluded.md` with `stage = upload, reason = timeout-5min`.
    - Log each retry attempt and final decision to `.harness/STATE.md`.
 
-### Python upload script pattern
+### Required metadata fields
 
-For **every** file type (`.md`, `.pdf`, `.pptx`, `.xlsx`, etc.), upload via Python so that binary/base64 content never flows through the LLM context:
+Pass these as the `metadata` dict to `ragflow_upload`:
 
-```python
-# .harness/downloads/upload_<slug>.py
-import base64, json, os, requests
-
-RAGFLOW_BASE   = os.environ["RAGFLOW_BASE_URL"]   # e.g. http://localhost:9380
-RAGFLOW_APIKEY = os.environ["RAGFLOW_API_KEY"]
-DATASET_ID     = "<kb_dataset_id>"
-FILE_PATH      = ".harness/downloads/<slug>.<ext>"
-
-METADATA = {
-    "original_url":         "<original_url>",
-    "canonical_url":        "<canonical_url>",
-    "source_host":          "<host>",
-    "origin":               "<client|agent>",
-    "doc_type":             "<html|pdf|pptx|xlsx|other>",
-    "capture_timestamp":    "<ISO-8601 UTC>",
-    "run_id":               "<run_id>",
-    "cycle":                1,
-    "car_brand":            "<brand>",
-    "car_model":            "<model>",
-    "car_model_year":       "<integer>",
-    "car_market_input":     "<string>",
-    "car_market_canonical": "<canonical>",
-    "resolved_trim":        "<trim>"
-}
-
-with open(FILE_PATH, "rb") as f:
-    content_b64 = base64.b64encode(f.read()).decode()
-
-filename = os.path.basename(FILE_PATH)
-url = f"{RAGFLOW_BASE}/api/v1/datasets/{DATASET_ID}/documents"
-headers = {"Authorization": f"Bearer {RAGFLOW_APIKEY}", "Content-Type": "application/json"}
-payload = {
-    "name": filename,
-    "blob": content_b64,
-    "metadata": METADATA
-}
-
-resp = requests.post(url, headers=headers, json=payload, timeout=120)
-resp.raise_for_status()
-data = resp.json()
-doc_id = data["data"]["id"]
-print(f"doc_id={doc_id}")
-```
-
-The agent reads `doc_id=<id>` from stdout and records it in `.harness/STATE.md`. Delete the upload script after successful execution.
-
-> **Note:** If `RAGFLOW_BASE_URL` / `RAGFLOW_API_KEY` are not in the environment, surface an error immediately — do not attempt upload.
+| Field | Value |
+| :---- | :---- |
+| `original_url` | Pre-canonicalisation URL as flagged |
+| `canonical_url` | After canonicalisation rules |
+| `source_host` | Website host |
+| `origin` | `client` or `agent` |
+| `doc_type` | `html`, `pdf`, `docx`, `xlsx`, `pptx` |
+| `capture_timestamp` | ISO-8601 UTC when `fetch_url` was called |
+| `run_id` | Owning run ID |
+| `cycle` | `1` for original ingestion |
+| `car_brand` | From STATE.md |
+| `car_model` | From STATE.md |
+| `car_model_year` | Integer, from STATE.md |
+| `car_market_input` | From STATE.md |
+| `car_market_canonical` | Canonical market code |
+| `resolved_trim` | From STATE.md |
 
 ## Upload completion gate (HARD BOUNDARY)
 
@@ -196,7 +153,7 @@ The agent reads `doc_id=<id>` from stdout and records it in `.harness/STATE.md`.
 
 ## Ingestion submission & polling
 
-Each successful Python upload script prints `doc_id=<id>` to stdout. The agent reads this value, records it in `.harness/STATE.md` source roster, and records the upload timestamp as `ingestion_started_at` in `.harness/STATE.md` (use the earliest upload timestamp when uploading multiple documents). Ingestion is queued by RAGFlow as part of the upload.
+Each successful `ragflow_upload` call returns a JSON string with `id` (the `doc_id`). The agent reads this value, records it in `.harness/STATE.md` source roster, and records the upload timestamp as `ingestion_started_at` in `.harness/STATE.md` (use the earliest upload timestamp when uploading multiple documents). Ingestion is queued by RAGFlow as part of the upload.
 
 ## Pause boundary (after upload gate passes)
 
@@ -226,7 +183,7 @@ The lead does **not** poll `doc_infos` during this pause. That happens on resume
 
 * `.harness/sources_excluded.md` updated for any drops (download, upload timeout, ingestion failures).
 * `.harness/STATE.md` source stats block updated (Uploaded / Ingested / Dropped_IngestTimeout / etc.).
-* `.harness/downloads/` folder populated with all downloaded files (for audit trail).
+* `.harness/downloads/` folder populated with all downloaded files (for audit trail and quality verification).
 * Per-doc metadata persisted in the knowledge base (queryable via `get_metadata_summary`).
 
 ## Success criteria
@@ -239,11 +196,10 @@ The lead does **not** poll `doc_infos` during this pause. That happens on resume
 
 | Failure                                                      | Response                                                                                  |
 | :----------------------------------------------------------- | :---------------------------------------------------------------------------------------- |
-| `browser_render_markdown` fails for HTML URL (3 retries)     | Drop; record as `stage = download`.                                                       |
-| Python download script fails or raises (3 retries)           | Drop; record as `stage = download`.                                                       |
-| Python upload script fails or raises (3 retries or 5 min)   | Drop; record as `stage = upload, reason = timeout-5min` or error message.                 |
-| `RAGFLOW_BASE_URL` / `RAGFLOW_API_KEY` missing in env        | Surface error immediately; do not attempt any uploads; ask user to fix environment.       |
+| `fetch_url` fails for HTML URL (3 retries)                   | Drop; record as `stage = download`.                                                       |
+| `fetch_url` fails for binary URL (3 retries)                 | Drop; record as `stage = download`.                                                       |
+| URL is a video / YouTube / streaming media                   | Drop immediately; record as `stage = download, reason = unsupported-type`. No retries.   |
+| `ragflow_upload` fails or raises (3 retries or 5 min)        | Drop; record as `stage = upload, reason = timeout-5min` or error message.                 |
 | Upload gate triggered (some uploads failed)                  | Pause and ask user: retry, proceed partial, or abort.                                     |
 | Document repeatedly reports `failed` after upload            | Mark `Dropped_IngestTimeout`; record in `.harness/sources_excluded.md`.                   |
 | No documents ingest within timeout                           | Pause with `ingestion-error-client-confirmation-needed` and surface the status breakdown. |
-
