@@ -54,6 +54,8 @@ Every parameter in the frozen reference list produces exactly **one** record. Re
 | `decision_rule` | One of `{Rule-1, Rule-2a, Rule-2b, Rule-3, Rule-4, Rule-5}`. The single rule that produced the record. |
 | `presence_justification` | Prose. Explains why the presence value was assigned. Required for every record except Rule 4 (silent-all). |
 | `level_justification` | Prose. Explains why the level was chosen and not the alternatives. Required only when `classification` is non-empty (Rule 1). |
+| `confidence` | One of `{consensus, single-source, vague-only, silent-all}`. Set deterministically by the decision-rule engine — see `stellantis-decision-rules` "Consensus verification". `consensus` requires ≥ 2 clear sources from distinct `source_type` categories. |
+| `inverse_retrieval_attempted` | Boolean. Required `true` on every Rule 4 record (the engine demands an inverse-retrieval pass before settling at silent-all). May be `true` on other rules too if an inverse pass ran. |
 | `traceability_blocks[]` | Zero or more blocks. Cardinality determined by the rule (see below). |
 
 ### Traceability-block cardinality (per rule)
@@ -72,8 +74,9 @@ Every parameter in the frozen reference list produces exactly **one** record. Re
 | Field | Notes |
 | :--- | :--- |
 | `kind` | `clear` or `vague`. |
-| `stance` | For Rule 2b: `present` or `absent`. Optional otherwise. |
+| `stance` | For Rule 2b: `present` or `absent`. Optional otherwise. For inverse-retrieval evidence: `absent` (this is what promotes Rule 4 candidates to Rule 5). |
 | `source_url` | The canonical URL stored as document metadata in the KB. **URL-level only**; no chunk IDs, fragments, or excerpts in the deliverable. |
+| `source_type` | Mirrors the `source_type` from KB metadata. Required because the consensus check in `stellantis-decision-rules` reads it from the traceability block, not by re-querying the KB. |
 | `note` | Optional short prose tying the source to the rule. |
 
 ## Deliverable format

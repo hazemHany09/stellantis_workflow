@@ -6,6 +6,7 @@ stage: W1-stage-3-modeB, W2-stage-3
 requires:
   - stellantis-domain-context
   - stellantis-failure-handling
+  - serper-api-mastery
 provides:
   - source-candidate-list.md
 tools:
@@ -21,6 +22,7 @@ tools:
 Foundational:
 - `stellantis-domain-context` — vocabulary.
 - `stellantis-failure-handling` — URL canonicalisation, candidate cap, paywall drop.
+- `serper-api-mastery` — query operator and date-filter reference. **Invoke before composing any Serper search call** in this skill (`google_search`, `google_search_news`, `google_search_images`, `google_search_videos`, `google_search_autocomplete`). Open-web discovery without a domain hint is the highest-leverage place for the operator knowledge in `serper-api-mastery`: `tbs` date filters, multi-domain `OR` chains, the autocomplete → targeted two-step pattern, and `autocorrect=False` for operator-rich queries.
 
 Standalone (Mode B). Produces output consumed by `stellantis-source-validation`.
 
@@ -47,6 +49,8 @@ W2 stage 3 (not authored yet as a full workflow, but this sub-skill is ready). A
 ## Tools allowed
 
 * `google_search`, `google_search_news`, `google_search_images`, `google_search_videos`, `google_search_autocomplete`.
+
+**Before issuing any query, consult `serper-api-mastery`.** Mode B has no domain anchor, so query precision matters more than in Mode A: it is the difference between landing on the OEM brochure and landing on a forum thread. Use `serper-api-mastery`'s discovery → targeted pattern: a first broad query (or `google_search_autocomplete`) to surface the canonical OEM/press domains and feature vocabulary for this car, then a targeted query with `site:` OR-chains and `intitle:` against those domains. Use `tbs=qdr:y` (or a custom `cdr:1,cd_min:…` window scoped to the model year) to suppress out-of-cycle press, and pass `autocorrect=False` once operators are in play.
 
 ## Rules
 

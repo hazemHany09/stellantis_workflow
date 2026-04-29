@@ -10,10 +10,13 @@ requires:
   - stellantis-failure-handling
   - stellantis-run-workspace
   - stellantis-subagent-classification-loop
+  - stellantis-subagent-doc-deep-dive
 provides:
   - partition-manifests
   - consolidated-category-STATE-files
   - archived-subagent-files
+  - round1-document-promise-aggregate
+  - round2-deep-dive-manifests
 tools:
   - batch_update_doc_metadata
   - get_metadata_summary
@@ -25,17 +28,28 @@ Foundational:
 - `stellantis-domain-context`, `stellantis-decision-rules`, `stellantis-output-contract`, `stellantis-failure-handling`, `stellantis-run-workspace`.
 
 Hard:
-- `stellantis-subagent-classification-loop` (spawned per partition in stage 6a).
+- `stellantis-subagent-classification-loop` — Round-1 search-mode subagent, spawned per partition in stage 6a.
+- `stellantis-subagent-doc-deep-dive` — Round-2 read-only-on-single-document subagent, spawned per (target-doc × gap-parameters) tuple in stage 6b.
 
-Receives KB dataset from `stellantis-source-download-and-ingest`; orchestrates subagent partitions.
+Receives KB dataset from `stellantis-source-download-and-ingest`; orchestrates subagent partitions across two rounds.
 
 ---
 
-# Sub-skill — Lead orchestration of subagents
+# Sub-skill — Lead orchestration of subagents (two-round flow)
 
 ## Overview
 
-Partitions the frozen `params.csv` into per-category batches, spawns subagents (max 3 concurrent), monitors each for progress or failure, and serially consolidates each result envelope into the category STATE files.
+Drives the two-round subagent architecture that produces classification records for the deliverable.
+
+**Round 1 — search-mode (broad recall).** Partition the frozen `params.csv` into per-category batches; spawn a Round-1 search-mode subagent per partition (`stellantis-subagent-classification-loop`); each runs per-parameter KB retrieval, applies the decision rules, and reports records + a `document_promise_scores[]` table + a partition summary.
+
+**Lead consolidation pass A.** Consolidate all Round-1 envelopes. Aggregate `document_promise_scores[]` across partitions into a run-level promise board. Identify gap parameters: anything finalised at Rule 3, Rule 4, or Rule 1 / Rule 5 with `confidence = single-source` where a corroborating source-type may exist in the KB. Map each gap parameter to the highest-promise document(s) most likely to resolve it.
+
+**Round 2 — doc-deep-dive (high precision).** For each chosen (target document × gap-parameters) tuple, spawn a Round-2 deep-dive subagent (`stellantis-subagent-doc-deep-dive`). Each Round-2 subagent reads exactly that one Markdown document end-to-end, no search, and emits records constrained to its evidence.
+
+**Lead consolidation pass B.** Merge Round-2 records back with Round-1 records. Promote single-source verdicts to consensus where the merge produces ≥ 2 distinct `source_type` categories agreeing. Apply consensus invariants from `stellantis-decision-rules`. Finalise category STATE files and the deliverable.
+
+Concurrency cap (max 3 concurrent subagents) applies separately within each round; the rounds themselves are serial — Round 2 cannot start before Round 1 has fully consolidated.
 
 ## When this runs
 
@@ -56,7 +70,7 @@ W1 stage 6 (and 6a, 6b). After ingestion verification has passed.
 * `get_metadata_summary` (read-only, for sanity check after consolidation).
 * `batch_update_doc_metadata` (applied on staged patches from subagent envelopes).
 
-## Partitioning
+## Round 1 — search-mode partitioning
 
 1. Enumerate categories from the frozen CSV — the distinct non-empty values of `Domain / Category` rows that are **not** category banners or `Category Overview` rows.
 2. For each category, count parameters.
@@ -86,7 +100,87 @@ The lead periodically (not busy-loop) inspects each running subagent's working f
 * Monotonically increasing content size → still making progress.
 * Presence of `"status": "failed"` inside the envelope → subagent surrendered; re-spawn once.
 
-## Consolidation (serial)
+## Round-1 consolidation (serial)
+
+For each Round-1 subagent that signals ready:
+
+1. Read the working file; extract the result envelope.
+2. Validate each record against the intermediate-parameter-record schema and each traceability block against the traceability-block schema.
+3. Validate every enum value against the enums reference. Validate that every Rule 4 record carries `inverse_retrieval_attempted = true` (per invariant 11 in `stellantis-decision-rules`); reject and re-spawn if the flag is missing.
+4. Apply `docs_metadata_updates[]` by calling `batch_update_doc_metadata` with the staged patches.
+5. Merge records into `.harness/Category/<category>.md` — full per-parameter detail rendered via templates. Round-1 records are tagged `round = 1` so the merge with Round-2 records is unambiguous.
+6. Promote `warnings[]` into the category STATE's warnings section.
+7. Promote `advisories[]` into `.harness/advisories/undefined-tier.md` or `.harness/advisories/out-of-list-findings.md` based on `kind`.
+8. Append the subagent's `document_promise_scores[]` to `.harness/document-promise-board.md`, deduplicated by `doc_id`. When the same `doc_id` appears in multiple partitions, **sum** `parameters_evidenced[]` and `parameters_likely_to_be_evidenced[]` (deduped), and take the **maximum** `promise_score` (with the rationale of the highest scorer).
+9. Append the subagent's `partition_summary` to `.harness/partition-summaries.md`.
+10. Move the working file to `.harness/Archive/<agent-name>.md`. Update `SubagentStatus = archived`.
+11. Update main STATE.md summary counts and subagent roster.
+
+## Round-1 → Round-2 hand-off (lead consolidation pass A)
+
+After every Round-1 subagent has finished and consolidated:
+
+### Identify gap parameters
+
+Walk every Round-1 record. Mark a parameter as a **gap parameter** when any of the following hold:
+
+* The verdict is **Rule 4** (`No Information Found, Unable to Decide, Empty`). Even with `inverse_retrieval_attempted = true`, a Rule 4 may still be recoverable if a high-promise document discusses the feature in detail outside what vector retrieval surfaced.
+* The verdict is **Rule 3** (`Yes, Unable to Decide, Empty`). The feature is mentioned but no clear source emerged; a deep-dive may surface the level.
+* The verdict is **Rule 1 or Rule 5 with `confidence = single-source`**. A second `source_type` corroboration from a different document in the KB would promote the record to `consensus`.
+
+Do **not** mark Rule 2a / Rule 2b records as gap parameters — conflicts are resolved by human adjudication, not by another retrieval pass.
+
+### Pick target documents
+
+For each gap parameter, walk the document-promise board and select the highest-`promise_score` documents whose `parameters_likely_to_be_evidenced[]` includes that parameter. Greedy set-cover:
+
+1. Pick the document with the highest `promise_score`. Assign all gap parameters listed in its `parameters_likely_to_be_evidenced[]` to that document's deep-dive.
+2. Subtract those parameters from the gap set. Repeat with the next-highest-promise document for the remaining gaps.
+3. Cap the round at **at most 6 deep-dive subagents per run** (configurable). Once the cap is reached, remaining gap parameters are accepted at their Round-1 verdict; record this in the run-level warnings.
+
+When a gap parameter appears in `parameters_likely_to_be_evidenced[]` of zero documents, no deep-dive is spawned for it — Round 1's verdict stands. This is the right outcome: vector retrieval already saw nothing in the KB, and no Round-1 subagent thought any document was promising for it. Spending a deep-dive there would not help.
+
+### Pre-create Round-2 contracts
+
+For each (target_doc × gap_parameters) tuple, pre-create a working file at `.harness/DeepDiveAgent/<agent-name>.md`. Embed the deep-dive contract per `stellantis-subagent-doc-deep-dive`. The contract carries the `target_doc.local_path` (which must already exist in `.harness/downloads/`; if not, the lead calls `ragflow_download` once before spawning), the gap parameter list with their Round-1 verdicts, and the trim package map.
+
+## Round 2 — doc-deep-dive concurrency
+
+Same concurrency rules as Round 1 — max 3 deep-dive subagents at once. Subagents only have `read_file` access, so failure modes are simpler (no retrieval timeouts, no upload failures). The per-partition ceiling is shorter (default 15 minutes); a deep-dive that produces no envelope in that window is failed and re-spawned once.
+
+## Round-2 consolidation (lead consolidation pass B)
+
+For each Round-2 subagent that signals ready:
+
+1. Read and validate the deep-dive envelope as in Round 1, but only the records for `gap_parameters` are emitted — there is no full-partition coverage from this subagent.
+2. **Merge with Round-1 records.** For each gap parameter in the deep-dive's records, locate the Round-1 record for that parameter in `.harness/Category/<category>.md`. Apply the merge logic below.
+3. Promote `warnings[]` and `advisories[]` as in Round 1.
+4. Move the working file to `.harness/Archive/<agent-name>.md`.
+
+### Merge logic — Round 1 + Round 2 per parameter
+
+The lead is the only agent permitted to merge across rounds. The merge is deterministic:
+
+| Round 1 | Round 2 | Result |
+| :--- | :--- | :--- |
+| Rule 4 (silent-all) | Rule 1 / Rule 5 (single-source) | Replace with Round-2 record. `confidence = single-source`. |
+| Rule 4 | Rule 3 / Rule 4 | Keep Round 1. Append a note that the deep-dive also found no clear evidence. |
+| Rule 3 (vague) | Rule 1 / Rule 5 (single-source) | Replace with Round-2 record. `confidence = single-source`. |
+| Rule 3 | Rule 3 | Keep Round 1; append the deep-dive vague block. |
+| Rule 1 (single-source) | Rule 1 (same level, different `source_type`) | Promote: Rule 1, `confidence = consensus`. Add the deep-dive's traceability block. |
+| Rule 1 (single-source) | Rule 1 (different level) | Escalate: Rule 2a (`Yes, Conflict, Empty`). Both blocks attached. |
+| Rule 1 (single-source) | Rule 5 (absent) | Escalate: Rule 2b (`Disputed, Conflict, Empty`). Both blocks attached. |
+| Rule 5 (single-source) | Rule 1 | Escalate: Rule 2b. |
+| Rule 5 (single-source) | Rule 5 (different `source_type`) | Promote: Rule 5, `confidence = consensus`. |
+| Anything | Rule 4 / Rule 3 from the deep-dive | Keep the higher-strength side. |
+
+The merge re-runs the consensus check from `stellantis-decision-rules`: any record whose merged traceability blocks span ≥ 2 distinct `source_type` categories with the same stance is `confidence = consensus`; otherwise `single-source`.
+
+## Round-2 termination criteria
+
+Round 2 ends when every spawned deep-dive subagent has finished consolidating. The lead does **not** start a Round 3 in the normal pipeline — additional cycles belong to gap-fill workflows, which are scoped separately. Persisting unresolved parameters surface as warnings in the deliverable footer.
+
+## Consolidation (legacy single-round path — deprecated)
 
 For each subagent that signals ready:
 
@@ -100,6 +194,8 @@ For each subagent that signals ready:
 8. Move the working file to `.harness/Archive/<agent-name>.md`. Update `SubagentStatus = archived`.
 9. Update main STATE.md summary counts and subagent roster.
 
+This single-round path is preserved as a reference for older runs; new runs follow the two-round flow above.
+
 ## Failure handling
 
 | Failure                                            | Response                                                                 |
@@ -112,5 +208,9 @@ For each subagent that signals ready:
 ## Success criteria
 
 * Every parameter in the frozen CSV has a consolidated record in the corresponding `.harness/Category/<category>.md`.
-* Every subagent ends in `SubagentStatus = archived` or `SubagentStatus = failed` (with lead-written Rule-4 fallback records).
+* Every Round-1 subagent ends in `SubagentStatus = archived` or `SubagentStatus = failed` (with lead-written Rule-4 fallback records).
+* Every Round-2 deep-dive subagent ends in `SubagentStatus = archived` or `SubagentStatus = failed`. Failed deep-dives leave the Round-1 verdict untouched.
+* Every Rule 4 record in the consolidated output carries `inverse_retrieval_attempted = true`.
+* Every Rule 1 / Rule 5 record carries `confidence ∈ {consensus, single-source}`. The mix of consensus vs single-source is visible in the run summary.
+* `.harness/document-promise-board.md` exists and was used to drive the Round-2 doc selection. The chosen target documents are recorded with their promise rationale for audit.
 * Main STATE.md counts sum consistently across categories.

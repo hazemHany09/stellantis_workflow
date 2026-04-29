@@ -1,8 +1,9 @@
 ---
 name: stellantis-subagent-classification-loop
-description: Use when spawned as a subagent with a pre-seeded working file containing a parameter partition — subagent context only, no web search or browser tools.
+description: Use when spawned as a Round-1 search-mode subagent with a pre-seeded working file containing a parameter partition — subagent context only. KB retrieval only, no web search or browser tools. Produces per-parameter records, document-promise scores, and a partition summary that feeds the lead's gap-fill decisions.
 loader: subagent
 stage: W1-stage-6a
+role: search-mode-subagent
 requires:
   - stellantis-domain-context
   - stellantis-decision-rules
@@ -13,6 +14,8 @@ requires:
 provides:
   - result-envelope-JSON
   - per-partition-classification-records
+  - document-promise-scores
+  - partition-summary
 tools:
   - retrieval
   - retrieve_knowledge_graph
@@ -36,11 +39,17 @@ Reads `enums-reference`, `lead-to-subagent-contract`, `subagent-to-lead-contract
 
 ---
 
-# Sub-skill — Subagent classification loop
+# Sub-skill — Round-1 search-mode subagent classification loop
 
 ## Overview
 
-Reads the lead-authored contract from the pre-seeded working file, runs up to 3 main retrieval iterations plus a 3-iteration fallback, applies the six decision rules, and writes a complete result envelope. KB retrieval tools only — web search and browser rendering are forbidden.
+This skill is the **Round-1 search-mode subagent** in the two-round subagent architecture (see `stellantis-lead-agent-subagent-orchestration` for the surrounding flow). It owns a partition of parameters drawn from a single category. It reads the lead-authored contract from the pre-seeded working file, runs **per-parameter targeted KB retrieval**, applies the six decision rules, runs the inverse-retrieval pass mandated by `stellantis-decision-rules` before any Rule 4 emission, and writes a complete result envelope. Alongside the per-parameter records, it emits a **document-promise score table** and a short **partition summary** so the lead can pick the most information-dense documents for the Round-2 deep-dive subagents.
+
+KB retrieval tools only — web search and browser rendering are forbidden.
+
+## Why per-parameter retrieval (not batched)
+
+An earlier version of this skill grouped 5–10 parameters into a single category-wide retrieval call. Vector search optimises for the centre of gravity of the query, so loud terms ("Touchscreen", "PHEV") swamped quieter ones ("Acoustic Glass", "Variable Charging Control"); the most specific evidence for the obscure parameters got pushed below the cut-off and the parameter was pushed into Rule 3 / Rule 4 needlessly. The fix is **one retrieval query per parameter**, possibly with a small number of paraphrased variants. Yes, this is more queries. Yes, that is the right cost — the goal is recall on every parameter, not throughput.
 
 ## When this runs
 
@@ -70,9 +79,11 @@ The subagent never writes document metadata directly. It **stages** metadata pat
 
 For each iteration, process parameters that do not yet have a finalised verdict.
 
-### Step 1 — Document relevance scan
+### Step 1 — Per-parameter targeted retrieval
 
-Use `retrieval` on the KB dataset to identify the most relevant documents for the parameters in this partition. One call per parameter OR one multi-query call per batch of similar parameters. Retain the top-k (default 6) `doc_id`s.
+For **each unresolved parameter**, build a focused retrieval query from the parameter's optimised name + description + the applicable level definitions, **anchored to the resolved trim and `trim_package_map.full_option_definition`** (so the retrieval cannot drift onto sibling trims that share the same model line). Issue **one retrieval call per parameter**; retain the top-k (default 6) chunks/docs returned.
+
+When the parameter has multiple plausible phrasings (e.g. "Wireless CarPlay" vs "Wireless Apple CarPlay"), it is acceptable to issue 1–2 paraphrased variants and union the result set. Do **not** combine multiple parameters into a single retrieval call — that pattern was the source of the original false-Rule-3 / false-Rule-4 failures.
 
 Alternative: call `retrieve_knowledge_graph` when parameters cross-reference entities (rare; use only when `retrieval` alone is ambiguous).
 
@@ -94,6 +105,10 @@ Append under the current iteration heading of the working file (see template):
 * The retrieval queries issued.
 * The doc ids touched + chunk ids downloaded.
 * Per parameter: observed evidence snippets, kind (`clear` / `vague`), any newly-added traceability block.
+
+### Step 3.5 — Inverse-retrieval pass (mandatory before Rule 4)
+
+Before any parameter is pushed toward Rule 4, run the inverse-retrieval pass defined in `stellantis-decision-rules` ("Inverse retrieval — the prerequisite for Rule 4"). Build queries that target negation language (`"<feature>" "not available"`, `"<top_trim>" "deletes" OR "omits" OR "lacks"`, `"features not available on <top_trim>"`). If a negation chunk is found, **promote** the verdict to Rule 5; otherwise record `inverse_retrieval_attempted = true` on the record so the consolidator accepts the Rule 4. Skip this step only when the parameter already finalises at Rule 1 / Rule 2 / Rule 3 / Rule 5 from positive retrieval.
 
 ### Step 4 — Tentative verdict per parameter
 
@@ -147,10 +162,24 @@ Advisory: a parameter finishing at Rule-4 does **not** produce a warning; it is 
 
 At termination, write:
 
-1. **Per-parameter records** — exactly one entry per contract parameter, each validated against the intermediate parameter record schema. Traceability blocks attached per the cardinality rules in the deliverable specification.
+1. **Per-parameter records** — exactly one entry per contract parameter, each validated against the intermediate parameter record schema. Traceability blocks attached per the cardinality rules in the deliverable specification. Every record carries `confidence` (`consensus | single-source | vague-only | silent-all`) per `stellantis-decision-rules`. Every Rule 4 record carries `inverse_retrieval_attempted = true`.
 2. **Staged `docs_metadata_updates[]`** — one patch per touched doc. The patch records which parameters the doc evidenced, and with what classification. The lead applies these via `batch_update_doc_metadata`. The subagent does **not** apply them directly for final output.
-3. **Warnings** — cross-parameter issues worth surfacing in the category STATE (e.g. "All EV retrieval calls returned the same three docs").
-4. **Advisories** — `undefined_tier` and `out_of_list` entries.
+3. **Document-promise scores** — `document_promise_scores[]`, one entry per `doc_id` actually read in this loop. Each entry:
+   ```json
+   {
+     "doc_id": "<id>",
+     "canonical_url": "<url>",
+     "source_type": "<from KB metadata>",
+     "promise_score": 0.0,
+     "evidence_rationale": "<≤200-char prose>",
+     "parameters_evidenced": ["<param_id_1>", "..."],
+     "parameters_likely_to_be_evidenced": ["<param_id_x>", "..."]
+   }
+   ```
+   `promise_score ∈ [0.0, 1.0]` is the subagent's judgement of how information-dense this doc is for the partition's parameters: how many parameters it actually evidenced (`parameters_evidenced`) **plus** how many it appeared to discuss but where the chunk-level signal was insufficient to finalise (`parameters_likely_to_be_evidenced`). The rationale must justify the score in plain prose ("Fleet order guide containing the full Standard / Optional grid for every infotainment line"). The lead uses this table to choose which docs to ship to Round-2 deep-dive subagents — so `parameters_likely_to_be_evidenced` is the load-bearing field, since it tells the lead **where to look** to fill gaps. Be honest: the lead pays the cost of a deep-dive on every doc you mark high-promise, so calibrate scores against actual evidence density rather than optimism.
+4. **Partition summary** — `partition_summary`, free-text prose (≤ 600 chars) describing: which parameters were finalised at consensus, which dropped to single-source, which fell to Rule 3 / Rule 4, and any pattern the lead should know (e.g. "Dealer order guide was missing from this partition's evidence; if the lead has access to one, deep-dive should be prioritised on it").
+5. **Warnings** — cross-parameter issues worth surfacing in the category STATE (e.g. "All EV retrieval calls returned the same three docs").
+6. **Advisories** — `undefined_tier` and `out_of_list` entries.
 
 Assemble these into the result envelope at the tail of the working file, set `"status": "consolidated-ready"`, and return control.
 
@@ -162,6 +191,9 @@ Assemble these into the result envelope at the tail of the working file, set `"s
 4. Cardinality of traceability blocks matches the cardinality rules (e.g. Rule-4 → zero blocks; Rule-2a/2b → ≥2 clear blocks).
 5. The subagent never calls any tool outside `tool_allowlist`.
 6. The subagent never writes any file other than its own working file.
+7. Every Rule 4 record carries `inverse_retrieval_attempted = true` and at least one inverse-style query is logged in the working file.
+8. Every record carries a `confidence` value consistent with the rules in `stellantis-decision-rules` (Rule 1 / Rule 5 with one source-type → `single-source`; with ≥ 2 distinct source-types → `consensus`).
+9. The result envelope contains a `document_promise_scores[]` table covering every `doc_id` touched and a `partition_summary` string.
 
 ## Failure handling
 

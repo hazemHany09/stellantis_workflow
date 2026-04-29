@@ -84,6 +84,7 @@ Every uploaded document carries at minimum:
 | `car_identity` | yes | `(brand, model, model_year, market_canonical)`. |
 | `cycle` | optional | `1` for the original ingestion. `2`, `3`, … for gap-fill cycles. Absent or `1` means original. |
 | `origin` | optional | `client` (user-supplied URL) or `agent` (agent-discovered). |
+| `source_type` | yes | One of the source-type categories defined in `stellantis-source-validation`. Required for consensus verification in `stellantis-decision-rules`. |
 
 Metadata enables citation traceability and cycle-aware retrieval. The deliverable's `source_url` field reads `canonical_url` from this metadata.
 

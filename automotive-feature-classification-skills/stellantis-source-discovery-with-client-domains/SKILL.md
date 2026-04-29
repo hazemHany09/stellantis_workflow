@@ -6,6 +6,7 @@ stage: W1-stage-3-modeA
 requires:
   - stellantis-domain-context
   - stellantis-failure-handling
+  - serper-api-mastery
 provides:
   - source-candidate-list.md
 tools:
@@ -18,6 +19,7 @@ tools:
 Foundational:
 - `stellantis-domain-context` — vocabulary (source site vs domain).
 - `stellantis-failure-handling` — URL canonicalisation, paywall drop.
+- `serper-api-mastery` — query operator and date-filter reference. **Invoke before composing any `google_search` / `google_search_news` call** in this skill: it teaches `site:`, `inurl:`, `intitle:`, `filetype:`, `tbs` date filters, multi-domain `OR` chains, and the discovery → targeted two-step pattern that turns a vague car-tuple search into a high-signal candidate list.
 
 Produces output consumed by `stellantis-source-validation`.
 
@@ -50,6 +52,8 @@ W1 (Mode A) stage 3. The user's submission included either:
 * `google_search` (with `site:` restriction)
 * `google_search_news` (optional for recent press)
 * No browser rendering yet — that happens in `source-download-and-ingest`.
+
+**Before issuing any query, consult `serper-api-mastery`.** It is the canonical reference for query construction in this framework. The query patterns below are the *minimum* required per domain; `serper-api-mastery` shows how to escalate them — combining `intitle:`, `inurl:`, `filetype:pdf`, `tbs=qdr:y` for recency, and `autocorrect=False` so that `site:` and other operators are not silently rewritten by Google's spell-correction. When a domain returns weak results on the minimum patterns, escalate following `serper-api-mastery`'s discovery → targeted two-step pattern rather than firing more variations of the same shape.
 
 ## Rules
 

@@ -15,6 +15,7 @@ provides:
   - sources_excluded.md
 tools:
   - fetch_url
+  - fetch_webpage
   - ragflow_upload
   - ragflow_run_ingestion
   - doc_infos
@@ -67,7 +68,8 @@ W1 stages 4–5. After the client has approved at least one URL. Before the inge
 
 | Tool | Actor | Purpose |
 | :--- | :---- | :------ |
-| `fetch_url` | Download subagent | Fetch URL → save to `.harness/downloads/` |
+| `fetch_url` | Download subagent | Primary fetch path — supports all file types (HTML, PDF, DOCX, XLSX, PPTX); save to `.harness/downloads/` |
+| `fetch_webpage` | Download subagent | **Webpage-only fallback** — used when `fetch_url` returned a blocked / undersized HTML page (Cloudflare, 403, max-retry exhausted). Renders the page through Serper's webpage_scrape pipeline, which often bypasses simple bot blocks because the request headers, IP egress, and JS rendering differ from `fetch_url`. Markdown only; do not use for binary files. |
 | `ragflow_upload` | Download subagent | Upload saved file to KB dataset |
 | `ragflow_run_ingestion` | Lead only | Trigger parse/embed pipeline for all uploaded docs at once |
 | `doc_infos` | Lead only | Poll ingestion status per doc_id |
@@ -110,6 +112,7 @@ Pre-create `.harness/DownloadAgent/<slug>-dl.md` before spawning, using this str
     "canonical_url": "...",
     "source_host": "...",
     "origin": "client|agent",
+    "source_type": "manufacturer_official_spec|manufacturer_owner_manual|dealer_fleet_guide|third_party_press_long_form|third_party_aggregator|manufacturer_video|forum_or_ugc",
     "doc_type": "html|pdf|docx|xlsx|pptx",
     "capture_timestamp": "<ISO-8601 UTC>",
     "run_id": "...",
@@ -152,6 +155,29 @@ Detect file type from the URL extension and call `fetch_url`:
 `fetch_url` returns the saved file path. The subagent derives `size_bytes` from the returned path's file stat (or from the return value if it includes size metadata).
 
 **Retry policy (within the subagent):** 3 retries with exponential backoff (1 s, 2 s, 4 s). On all retries exhausted, write result with `status = failed, failure_reason = fetch-exhausted`.
+
+#### Step B-fallback — `fetch_webpage` for HTML pages only
+
+This step runs **only** when the subagent's contract carries `mode = "webpage-fallback"` (set by the lead during a fallback retry cycle — see Phase 3). It also runs in-line within the same subagent attempt when the URL is HTML and `fetch_url` returned a 403 / 401 / unauthorized status code from the upstream server before the retry budget was exhausted.
+
+`fetch_webpage` reaches the page through Serper's scraping pipeline, which uses a different request profile (headers, egress, JS render) and frequently succeeds where `fetch_url` is challenged or blocked. It is therefore the right second-chance tool for:
+
+- HTML pages where `fetch_url` returned a Cloudflare challenge (`block_type = rate-limited`).
+- HTML pages where `fetch_url` returned access-denied markers (`block_type = access-denied`) **but** the lead has elected to attempt the fallback (some 403s are bot-fingerprint blocks, not entitlement gates — Serper's pipeline can sometimes pass through).
+- HTML pages where the retry budget hit `attempt_number ≥ 3` with `failure_reason = fetch-exhausted` and the URL is not a binary file.
+
+Call shape:
+
+```
+fetch_webpage(
+    url=<canonical_url>,
+    output_dir=".harness/downloads/"
+)
+```
+
+Returns the saved Markdown file path. The subagent then re-runs **Step C — Block detection** on the Markdown produced by `fetch_webpage`. If the file passes the block check, proceed to **Step D — Upload**, recording `fetch_method = "fetch_webpage"` in the result envelope so the audit trail is preserved. If it still fails the block check, mark the URL as exhausted: `status = <block_type>, failure_reason = webpage-fallback-blocked`.
+
+**Hard rule.** Never call `fetch_webpage` on a URL whose detected file type is anything other than HTML (PDF, DOCX, XLSX, PPTX, video). Binary files take the original `fetch_url` retry path; the webpage fallback is markdown-rendering only.
 
 #### Step C — Block detection (HTML/markdown files only)
 
@@ -206,7 +232,9 @@ The subagent writes its result into the working file:
   "block_type": "rate-limited | access-denied | null",
   "block_markers": ["<marker1>", ...],
   "failure_reason": "<reason or null>",
-  "attempt_number": <n>
+  "attempt_number": <n>,
+  "fetch_method": "fetch_url | fetch_webpage",
+  "is_html": true | false
 }
 <!-- END DOWNLOAD RESULT -->
 ```
@@ -275,6 +303,30 @@ For each URL in the retry queue (rate-limited + failed, user-approved where requ
 3. Re-dispatch download subagent.
 4. On completion, **re-run Phase 3 consolidation** for retried URLs only.
 5. Repeat until the URL succeeds, is access-denied, or has `attempt_number ≥ 3`.
+
+### Phase 3b — Webpage-fallback retry round (HTML only)
+
+Some of the most valuable sources — feature-availability matrices on Edmunds / KBB / OEM ADAS guides — are reachable through `fetch_url` only intermittently. These pages routinely get blocked by Cloudflare or by 403 / unauthorized responses, even though the underlying content is publicly visible to a normal browser. Losing them to the standard retry loop means losing the canonical Standard-vs-Optional grids that anchor presence verdicts. The webpage fallback recovers most of that loss.
+
+**Trigger conditions.** After the standard retry loop in Phase 3 settles, scan STATE.md for any URL where **all** of the following hold:
+
+- `is_html = true` (the URL would render to a markdown page; not a PDF / DOCX / XLSX / PPTX / video).
+- `fetch_method = fetch_url` on every prior attempt (i.e. the webpage fallback has not yet been tried for this URL).
+- The terminal status is one of: `rate-limited` with `attempt_number ≥ 3`, `access-denied`, or `failed` with `failure_reason = fetch-exhausted`.
+
+For each such URL:
+
+1. Reset `attempt_number` to `1` for the fallback round (the webpage fallback uses its own attempt counter so the original 3-attempt budget is not double-counted).
+2. Re-seed `.harness/DownloadAgent/<slug>-dl.md` with `mode = "webpage-fallback"` in the contract block. Add `prior_failure_reason` so the subagent has audit context.
+3. Re-dispatch the download subagent. The subagent reads `mode = "webpage-fallback"` and goes directly to **Step B-fallback** (skipping Step B). Block detection (Step C) and upload (Step D) run as normal. The result envelope records `fetch_method = "fetch_webpage"`.
+4. Apply up to 2 fallback attempts per URL (1 s, 4 s backoff between them).
+5. **Outcome update:**
+   - Fallback success → set `Status = uploaded`, attach the new `doc_id`. Remove the URL from `.harness/sources_excluded.md` if it was previously listed.
+   - Fallback still rate-limited / access-denied / fetch-exhausted → set `Status = auto-flagged-invalid`. Record `failure_reason = webpage-fallback-blocked` in `.harness/sources_excluded.md`. The URL is now permanently excluded.
+
+**No user prompt during Phase 3b.** The fallback is a deterministic recovery attempt; the user has already seen the source in the original approval list. Surface the round as a single event-log entry: `"Webpage-fallback round attempted for N URL(s); M recovered, K still blocked."`
+
+**Why this is not a third retry of `fetch_url`.** The original retry loop varies only the timing of identical requests; a Cloudflare or bot-fingerprint block does not flip on backoff alone. `fetch_webpage` is a different request profile entirely (different egress, headers, JS render), so it has independent odds of success. That is why it is worth one more pass and not folded into the standard retry budget.
 
 ---
 
@@ -375,7 +427,9 @@ Triggered when user replies `resume` (or any affirmative continuation).
 | HTML file < 10 KB, Cloudflare markers | `status = rate-limited`; report to user; retry on approval (max 3 total). |
 | HTML file < 10 KB, no known markers | `status = rate-limited` (default); same handling as above. |
 | HTML file < 10 KB, access-denied markers | `status = access-denied`; flag immediately; report to user; no retry ever. |
-| Rate-limit persists after 3 attempts | `auto-flagged-invalid`; `failure_reason = rate-limited-max-retries`; no user prompt. |
+| Rate-limit persists after 3 attempts | Trigger Phase 3b (webpage-fallback round) automatically; if the fallback also blocks, `auto-flagged-invalid`; `failure_reason = webpage-fallback-blocked`. No user prompt. |
+| Access-denied on HTML page (likely bot-fingerprint, not entitlement gate) | Trigger Phase 3b (webpage-fallback round); on success, source recovers; on second block, `auto-flagged-invalid` with `failure_reason = webpage-fallback-blocked`. |
+| `fetch-exhausted` on HTML page | Trigger Phase 3b (webpage-fallback round); recover or permanently flag. |
 | `ragflow_upload` fails (3 retries) | `failure_reason = upload-exhausted`; URL excluded. |
 | Upload gate triggered (partial failures) | Pause; ask user: proceed partial or abort. |
 | `ragflow_run_ingestion` fails twice | Pause with `PauseReason = ingestion-trigger-failed`; surface error to user. |
