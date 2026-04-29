@@ -2,22 +2,25 @@
 
 Exhaustive per-path access rules. `R` = may read, `W` = may write, `C` = creates, `A` = archives (move), `—` = must not touch. Paths are relative to `runs/<run-id>/`.
 
-| Path                                              | Lead    | Subagent | Notes                                                                 |
-| :------------------------------------------------ | :------ | :------- | :-------------------------------------------------------------------- |
-| `STATE.md`                                        | C W R   | —        | Main state file. Only lead updates it.                                |
-| `params.csv`                                      | C R     | R        | Frozen snapshot; read-only to both.                                   |
-| `params.csv.hash`                                 | C R     | —        | Written at preflight.                                                 |
-| `deliverable.json`                                | C W     | —        | Emitted at W1 stage 7.                                                |
-| `deliverable.csv`                                 | C W     | —        | Emitted at W1 stage 7.                                                |
-| `source-candidate-list.md`                        | C W R   | —        | Posted to user at the approval gate.                                  |
-| `source-approved.md`                              | C W R   | —        | Parsed result of the client reply.                                    |
-| `.harness/Category/<category>.md`                 | C W R   | —        | Consolidated per-category STATE; lead-only writer.                    |
-| `.harness/SubAgent/<agent-name>.md`               | C R (pre-seed contract) / W (never after spawn) | R W | Lead seeds it with the contract; subagent writes everything after. |
-| `.harness/Archive/<agent-name>.md`                | C (via move) R | — | Destination of consolidated subagent working files.                   |
-| `.harness/Archive/sources_excluded.md`            | C W R   | —        | Download/ingestion failures.                                         |
-| `.harness/advisories/undefined-tier.md`           | W R     | —        | Lead promotes from subagent working files during consolidation.       |
-| `.harness/advisories/out-of-list-findings.md`     | W R     | —        | Same as above.                                                        |
-| `.harness/event-log.md`                           | C W     | —        | Append-only; mirrors STATE.md events.                                 |
+| Path                                              | Lead    | Download subagent | Classification subagent | Notes                                                                 |
+| :------------------------------------------------ | :------ | :---------------- | :---------------------- | :-------------------------------------------------------------------- |
+| `STATE.md`                                        | C W R   | —                 | —                       | Main state file. Only lead updates it.                                |
+| `params.csv`                                      | C R     | —                 | R                       | Frozen snapshot; read-only after preflight.                           |
+| `params.csv.hash`                                 | C R     | —                 | —                       | Written at preflight.                                                 |
+| `deliverable.json`                                | C W     | —                 | —                       | Emitted at W1 stage 7.                                                |
+| `deliverable.csv`                                 | C W     | —                 | —                       | Emitted at W1 stage 7.                                                |
+| `source-candidate-list.md`                        | C W R   | —                 | —                       | Posted to user at the approval gate.                                  |
+| `source-approved.md`                              | C W R   | —                 | —                       | Parsed result of the client reply.                                    |
+| `.harness/downloads/<slug>.<ext>`                 | —       | C W               | —                       | Written by download subagent via `fetch_url`; preserved post-upload.  |
+| `.harness/DownloadAgent/<slug>-dl.md`             | C R (seeds contract) | W (scratch + result envelope) | — | Lead seeds contract; download subagent writes everything after. |
+| `.harness/Category/<category>.md`                 | C W R   | —                 | —                       | Consolidated per-category STATE; lead-only writer.                    |
+| `.harness/SubAgent/<agent-name>.md`               | C R (seeds contract) | — | W (scratch + result envelope) | Lead seeds contract; classification subagent writes everything after. |
+| `.harness/Archive/<agent-name>.md`                | C (via move) R | —            | —                       | Archived classification subagent working files post-consolidation.    |
+| `.harness/Archive/<slug>-dl.md`                   | C (via move) R | —            | —                       | Archived download subagent working files post-consolidation.          |
+| `.harness/Archive/sources_excluded.md`            | C W R   | —                 | —                       | All download/upload/ingestion failures (access-denied, rate-limited, timeouts). |
+| `.harness/advisories/undefined-tier.md`           | W R     | —                 | W R                     | Subagents write parameter advisories; lead promotes to run-level.     |
+| `.harness/advisories/out-of-list-findings.md`     | W R     | —                 | W R                     | Same as above.                                                        |
+| `.harness/event-log.md`                           | C W     | —                 | —                       | Append-only; mirrors STATE.md events.                                 |
 
 Paths outside the run workspace:
 
@@ -36,6 +39,8 @@ Paths outside the run workspace:
 
 ## Invariants
 
-1. A subagent that writes to any path not listed as `W` for Subagent in this matrix is a bug. The lead must reject the subagent's output and treat it as `SubagentStatus = failed`.
-2. A subagent that reads any `.harness/Category/*.md`, the main `STATE.md`, or another subagent's working file is a bug. The lead must verify this by inspection during consolidation.
-3. `framework-maintenance/` is off-limits during a run. It is edited only by an operator explicitly invoking the self-modification workflow under [`../../framework-maintenance/README.md`](../../framework-maintenance/README.md).
+1. A **classification subagent** that writes to any path not listed as `W` for Classification subagent in this matrix is a bug. The lead must reject the subagent's output and treat it as `SubagentStatus = failed`.
+2. A **download subagent** that writes to any path other than its own `.harness/DownloadAgent/<slug>-dl.md` and `.harness/downloads/<slug>.<ext>` is a bug. The lead must treat its result as invalid.
+3. A classification subagent that reads any `.harness/Category/*.md`, the main `STATE.md`, or another subagent's working file is a bug. The lead must verify this by inspection during consolidation.
+4. Download subagents must never read `STATE.md`, `params.csv`, or any classification subagent file. All inputs they need are in their contract block.
+5. `framework-maintenance/` is off-limits during a run. It is edited only by an operator explicitly invoking the self-modification workflow under [`../../framework-maintenance/README.md`](../../framework-maintenance/README.md).

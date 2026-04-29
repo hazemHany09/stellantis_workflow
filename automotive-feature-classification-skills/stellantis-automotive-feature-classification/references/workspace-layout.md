@@ -16,13 +16,18 @@ runs/<run-id>/
 ├── source-candidate-list.md              ← the list posted to user at the approval gate
 ├── source-approved.md                    ← parsed result of client reply; per-URL Approved/Rejected
 └── .harness/                             ← agent-internal working files
+    ├── downloads/                        ← pre-upload staging; written by download subagents (W1 stage 4)
+    │   └── <slug>.<ext>                  ← fetched file; preserved post-upload for audit
+    ├── DownloadAgent/                    ← download subagent working files (W1 stage 4)
+    │   └── <slug>-dl.md                  ← contract + scratch + result envelope per URL
     ├── Category/
     │   └── <category>.md                 ← per-category consolidated STATE; Lead-only writer
     ├── SubAgent/
-    │   └── <agent-name>.md               ← per-subagent working file; Subagent-only writer
+    │   └── <agent-name>.md               ← per-classification-subagent working file; Subagent-only writer
     ├── Archive/
-    │   ├── <agent-name>.md               ← archived after Lead consolidates
-    │   └── sources_excluded.md           ← download/ingestion failures
+    │   ├── <agent-name>.md               ← archived classification subagent files post-consolidation
+    │   ├── <slug>-dl.md                  ← archived download subagent files post-consolidation
+    │   └── sources_excluded.md           ← download/upload/ingestion failures; access-denied; rate-limited drops
     ├── advisories/
     │   ├── undefined-tier.md             ← evidence pointing at undefined tiers
     │   └── out-of-list-findings.md       ← features found that fall outside the parameter list

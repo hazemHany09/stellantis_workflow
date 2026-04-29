@@ -96,6 +96,29 @@ A subagent does not return a valid result envelope.
 
 The lead enforces a maximum of 3 subagents running concurrently. If a slot is needed and none is free, queue the partition. A queued partition is not a failure.
 
+### 7. Rate limit (Cloudflare / server throttle)
+
+Detected by a download subagent when a fetched HTML/Markdown file is suspiciously small (`size_bytes < 10 240`) AND the first 500 characters contain one or more of: `"just a moment"`, `"cf-challenge"`, `"ray id:"`, `"checking your browser"`, `"enable javascript and cookies"`, `"cf_chl"`, `"attention required"`, `"ddos protection"`. If size is < 10 KB but none of these markers are found, treat as rate-limited by default (Cloudflare pages vary).
+
+| Stage | Action |
+| :--- | :--- |
+| Detected by subagent | Subagent writes `status = rate-limited` in result envelope. Does **not** call `ragflow_upload`. |
+| Lead consolidates | Reports rate-limited URL(s) to user: count, URLs, current attempt number out of 3. |
+| User approves retry | Lead re-dispatches download subagent. Increments `Attempts` in STATE.md source download tracking. |
+| User declines retry | Drop URL. Record `failure_stage = download, failure_reason = rate-limited-user-declined`. |
+| `Attempts ≥ 3` (any attempt outcome) | **Auto-flag without prompting.** Set `Status = auto-flagged-invalid`. Record `failure_reason = rate-limited-max-retries`. |
+
+### 8. Access denied (HTTP 403 / hard block)
+
+Detected by a download subagent when a fetched file contains one or more of: `"403 forbidden"`, `"access denied"`, `"not authorized"`, `"401 unauthorized"`, `"you don't have permission"`, `"permission denied"`, `"forbidden"` (case-insensitive, in the first 500 characters).
+
+| Stage | Action |
+| :--- | :--- |
+| Detected by subagent | Subagent writes `status = access-denied` in result envelope. Does **not** call `ragflow_upload`. |
+| Lead consolidates | Sets `Status = access-denied` in STATE.md. Records `failure_stage = download, failure_reason = access-denied` in `sources_excluded.md`. |
+| Lead reporting | Surfaces all access-denied URLs to user in a single consolidated block. |
+| Retry | **Never attempted.** Access-denied sources are permanently excluded regardless of attempt count. |
+
 ## URL canonicalisation (drop reduction)
 
 Before any URL enters the approval / download pipeline, canonicalise to eliminate technical duplicates:

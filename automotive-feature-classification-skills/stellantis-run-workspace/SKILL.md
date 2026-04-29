@@ -39,16 +39,19 @@ Inline, on any read or write to `.harness/` or the project-root deliverables.
 ├── .harness/                                         # ALL agent-internal state (one per car)
 │   ├── STATE.md                                      # comprehensive run state (lead-write)
 │   ├── params.csv                                    # frozen reference list snapshot
-│   ├── downloads/                                    # PRE-UPLOAD STAGING AREA (new)
+│   ├── downloads/                                    # PRE-UPLOAD STAGING AREA
 │   │   ├── <slug>.md                                 # downloaded & converted markdown
 │   │   ├── <slug>.pdf                                # downloaded PDF
 │   │   └── <slug>.<ext>                              # other document types
+│   ├── DownloadAgent/                                # download subagent working files (W1 stage 4)
+│   │   └── <slug>-dl.md                              # per-URL download subagent working file
 │   ├── Category/
 │   │   └── <category>.md                             # consolidated per-category records (lead-write)
 │   ├── SubAgent/
-│   │   └── <agent-name>.md                           # active subagent working file (subagent-write)
+│   │   └── <agent-name>.md                           # active classification subagent working file (subagent-write)
 │   ├── Archive/
-│   │   └── <agent-name>.md                           # consolidated subagent files moved post-merge
+│   │   ├── <agent-name>.md                           # consolidated subagent files moved post-merge
+│   │   └── <slug>-dl.md                              # archived download subagent working files
 │   ├── advisories/                                   # internal-only artefacts
 │   │   ├── undefined-tier-evidence.md
 │   │   └── out-of-list-findings.md
@@ -79,11 +82,12 @@ Strict ownership prevents corruption when subagents run concurrently.
 | `.harness/STATE.md` | **Lead only.** |
 | Deliverable files (project root) | **Lead only.** |
 | `.harness/params.csv` (frozen snapshot) | **Lead only**, written once at preflight. Never edited after. |
-| `.harness/downloads/*` | **Lead only** — written during download phase, preserved for audit. |
+| `.harness/downloads/*` | **Download subagents** — written by each subagent during W1 stage 4; preserved for audit. Never deleted after upload. |
+| `.harness/DownloadAgent/<slug>-dl.md` | **Lead** seeds the contract block at spawn; **named download subagent** writes scratch + result envelope. |
 | `.harness/Category/*.md` | **Lead only.** Updated during consolidation. |
-| `.harness/SubAgent/<agent-name>.md` | **The named subagent only**, after the lead seeds the contract block at spawn time. |
-| `.harness/Archive/*.md` | **Lead only.** Files are moved here after consolidation. |
-| `.harness/advisories/*` | **Subagents** for parameter-level advisories; **lead** for run-level advisories. |
+| `.harness/SubAgent/<agent-name>.md` | **Lead** seeds the contract block at spawn; **named classification subagent** writes everything after. |
+| `.harness/Archive/*.md` | **Lead only.** Files are moved here after consolidation (both download and classification subagents). |
+| `.harness/advisories/*` | **Classification subagents** for parameter-level advisories; **lead** for run-level advisories. |
 | `.harness/source-*.md` | **Lead only.** |
 
 Subagents never touch any file outside their own `.harness/SubAgent/<agent-name>.md` and the advisory files they explicitly own.

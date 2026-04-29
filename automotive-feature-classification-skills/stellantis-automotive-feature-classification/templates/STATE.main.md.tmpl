@@ -58,10 +58,31 @@ Updated by the lead after every consolidation.
 | Rejected by client                       | `<<n>>` |
 | Dropped — paywall                        | `<<n>>` |
 | Dropped — duplicate                      | `<<n>>` |
-| Downloaded                               | `<<n>>` |
+| Downloaded & uploaded                    | `<<n>>` |
 | Ingested                                 | `<<n>>` |
+| Dropped — access-denied                  | `<<n>>` |
+| Dropped — rate-limited (max retries)     | `<<n>>` |
 | Dropped — download failure               | `<<n>>` |
+| Dropped — upload failure                 | `<<n>>` |
 | Dropped — ingestion timeout              | `<<n>>` |
+
+## Source download tracking
+
+Per-URL retry and block-detection state. Updated by the lead after each download subagent reports in. `Attempts` is incremented on each dispatch. Sources with `Attempts ≥ 3` that are still failing are auto-flagged without user prompt.
+
+| Canonical URL | Attempts | Last Failure Reason | File Size (bytes) | Local Path | Status |
+| :------------ | :------- | :------------------ | :---------------- | :--------- | :----- |
+| `<<url>>` | `0` | `—` | `—` | `—` | `pending` |
+
+**Status values:**
+- `pending` — not yet dispatched to a subagent
+- `downloaded` — `fetch_url` succeeded; file on disk
+- `uploaded` — `ragflow_upload` succeeded; `doc_id` recorded
+- `rate-limited` — file suspiciously small; Cloudflare or server throttle detected; awaiting user retry decision
+- `pending-retry` — user approved retry; subagent re-dispatched
+- `access-denied` — HTTP 403 / access-denied content detected; permanently excluded
+- `auto-flagged-invalid` — attempted ≥ 3 times; automatically excluded
+- `excluded` — dropped to `sources_excluded.md` (any reason)
 
 ## Category roster
 
