@@ -39,7 +39,7 @@ At the business level, the KB is required to support the following capabilities.
 | Report ingestion status               | To let the agent wait correctly before starting classification.                                                                                                                                                        |
 | Semantic retrieval over the dataset   | The core query primitive the classification stage consumes.                                                                                                                                                            |
 | Return citations for retrieved chunks | So every verdict can carry a citation back to the original document and, where possible, the chunk inside it.                                                                                                          |
-| Delete documents                      | So that problematic sources (duplicate content, off-target car, content mismatch detected post-ingestion) can be removed from retrieval. The agent calls `delete_docs` directly — no `Retired` lifecycle state exists. |
+| Delete documents                      | So that problematic sources (duplicate content, off-target car, content mismatch detected post-ingestion) can be removed from retrieval. Removal is a direct delete operation — there is no `Retired` lifecycle state. |
 | Optional: knowledge graph queries     | Useful for cross-parameter consistency checks; not a hard requirement of the business logic.                                                                                                                           |
 
 ## Lifecycle of a KB
@@ -58,7 +58,7 @@ The business rule "classification waits for full ingestion" is subject to the fo
 
 * **Download failure** (AS-KB-A / Q-KB-4): 3 retries with backoff; then the URL is dropped from the active source set and recorded in the deliverable's `sources_excluded` list. The run is not aborted.
 * **Ingestion timeout** (AS-KB-B / Q-KB-5): 30-minute per-document ceiling; on expiry the document is dropped with the same reporting treatment. Classification starts with whatever ingested successfully.
-* **Gap-fill KB reuse** (AS-KB-C / Q-KB-6): the gap-fill workflow extends the original KB rather than creating a fresh one, so citation identity is continuous across the normal run and the gap-fill. but with additional metadata showing that these new dpcuments are for gap fill run
+* **Gap-fill KB reuse** (AS-KB-C / Q-KB-6): the gap-fill workflow extends the original KB rather than creating a fresh one, so citation identity is continuous across the normal run and the gap-fill. New documents carry metadata identifying them as belonging to a gap-fill cycle.
 * **Citation granularity** (AS-KB-D / Q-KB-7): the deliverable exposes URL-level `Source link` only, even when the KB supports chunk-level locators. Chunk precision is retained internally.
 
 ## What the KB is *not*

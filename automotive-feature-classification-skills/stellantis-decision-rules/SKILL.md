@@ -122,6 +122,20 @@ Every emitted record must match exactly one row.
 | Rule 3  | ≥ 1 active source, but no clear active source (all active are vague) | `Yes` | `Unable to Decide` | `Empty` |
 | Rule 4  | No active sources at all (every source silent for this parameter) | `No Information Found` | `Unable to Decide` | `Empty` |
 
+## Classification level hierarchy
+
+The three classification levels are **cumulative** — each level inherits the criteria of all levels below it:
+
+| Level assigned | What it means |
+| :--- | :--- |
+| `Basic` | The feature meets the Basic criteria only. |
+| `Medium` | The feature meets **Medium criteria AND all Basic criteria** by default. A source need not explicitly confirm every Basic criterion — meeting Medium implies Basic is already met. |
+| `High` | The feature meets **High criteria AND all Medium criteria AND all Basic criteria** by default. Meeting High implies both Medium and Basic are already met. |
+
+This hierarchy applies when assigning the `classification` field under Rule 1. A source that confirms a feature at the `High` level simultaneously confirms it at `Medium` and `Basic` — do not require separate evidence for the lower levels. The applicable level set for a parameter (e.g. `B/M/H`, `M/H`, `B/H`) governs which levels are valid outputs; the hierarchy does not create new valid levels beyond what the parameter's schema defines.
+
+---
+
 ## Source-type categories and consensus verification
 
 A clear source is not just clear — it has a **source-type** that determines what kind of claim it can authoritatively make. Treating all clear sources as interchangeable was the mistake behind a class of false-positives observed in early runs: an owner's-manual mention of "how Night Vision works" was being snapped to `Presence = Yes` even when the manual covered the entire model line, including trims where the feature was optional or absent.

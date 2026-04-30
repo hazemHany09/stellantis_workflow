@@ -12,6 +12,8 @@ When you make a change of the kind listed in the leftmost column, apply **every*
 | Add `RunStage`, `RunStatus`, or `PauseReason` value | Update `enums.md`. Update `automotive-feature-classification/templates/STATE.main.md.tmpl`. Update `automotive-feature-classification/SKILL.md` Pause/Resume Protocol section. Update any workflow file that emits the new value. Add changelog entry.                                                                                                                                                                                               |
 | Add `SourceLifecycle` value                         | Update `enums.md`. Update `source-download-and-ingest/SKILL.md` decision tree. Update `business-logic/12-workflow-diagram.md` section B. Add changelog entry.                                                                                                                                                                                                                                                                                       |
 | Add a `DecisionRule` value (e.g. Rule-6)            | Update `enums.md`. Update `business-logic/10-decision-rules.md`. Update `business-logic/06-harness-interface.md` matrix. Update `automotive-feature-classification/templates/intermediate-parameter-record.json.tmpl` `allOf` matrix. Update `automotive-feature-classification/templates/deliverable.schema.json` `decision_rule` enum. Update `subagent-classification-loop/SKILL.md`. Add changelog entry.                                        |
+| Add a `Confidence` value (e.g. new label beyond `consensus / single-source / vague-only / silent-all`) | Update `enums.md::Confidence`. Update `intermediate-parameter-record.json.tmpl` `confidence` enum + the rule-to-confidence validator. Update `deliverable.schema.json` `confidence` enum. Update `stellantis-decision-rules/SKILL.md` consensus table + invariant 9. Update `stellantis-output-contract/SKILL.md` per-parameter record table. Update `business-logic/10-decision-rules.md` *Confidence annotation* table. Update `business-logic/06-harness-interface.md` invariant 11. Add changelog entry. |
+| Add a `SourceType` value (new category beyond the seven defined) | Update `enums.md::SourceType`. Update `stellantis-decision-rules/SKILL.md` source-type table + which categories count as independent. Update `stellantis-source-validation/SKILL.md` assignment logic. Update `stellantis-output-contract/SKILL.md` traceability-block fields. Update `business-logic/10-decision-rules.md` source-type table. If the new category implies a new authority profile, document which decisions it can/can't authoritatively back. Add changelog entry. |
 
 ## Add a new workflow
 
@@ -47,6 +49,29 @@ This skill must remain **compact** (\u2264 300 lines). Volatile content belongs 
 | A decision rule is added, removed, or modified | Apply the *Change a decision rule in business-logic* row above in full. Update this skill's rule list, master matrix, and invariants. Update `stellantis-subagent-classification-loop` rule references. Update `stellantis-output-contract` traceability cardinality table. |
 | An enum value used in a rule changes | Apply the *Add a new value to an enum* row above. Update this skill's matrix entries. |
 | A new edge case is observed in real runs | Add to the `Edge cases` section. If the edge case implies a new rule, escalate to the rule-change procedure. Otherwise update tips. |
+
+### `stellantis-lead-agent-subagent-orchestration`
+
+| Trigger to edit | Follow-ups |
+| :--- | :--- |
+| Round-2 deep-dive cap, gap-parameter detection rules, or document-promise-board scoring change | Update this skill's R1→R2 transition section. Update `stellantis-subagent-doc-deep-dive` if the contract or input shape changes. Update `STATE.main.md.tmpl` *R2 subagent roster* and *gap parameters + R2 target assignments* sections. Update `document-promise-board.md` schema if scoring inputs change. Update consolidation merge rules (single-source → consensus promotion). Add changelog entry. |
+| Partition strategy change (≤15 cap, category-split heuristic, max-3 concurrent) | Update this skill's partition section. Update `business-logic/11-assumptions.md::AS-HARN-D` if the threshold itself moves (this is a settled assumption — reopening requires explicit justification). Update partition-summaries.md schema if outputs change. Add changelog entry. |
+| Consolidator validation rules change (e.g. Rule-4 inverse-retrieval check, UGC-only Rule-1 demotion, confidence assignment) | Update this skill's *consolidation pass* section. Update `stellantis-decision-rules/SKILL.md` invariants 9–11 if validators are added or removed. Update `intermediate-parameter-record.json.tmpl` validators. Add changelog entry. |
+
+### `stellantis-subagent-doc-deep-dive`
+
+| Trigger to edit | Follow-ups |
+| :--- | :--- |
+| New deep-dive subagent contract field or result envelope shape | Update this skill. Update `stellantis-lead-agent-subagent-orchestration` Round-2 spawn / harvest sections. Update `STATE.main.md.tmpl` *R2 roster* fields if surfaced. Update file-ownership matrix for `.harness/DeepDiveAgent/<agent-name>.md`. Add changelog entry. |
+| Gap-parameter input shape changes | Update this skill's input section. Update `stellantis-lead-agent-subagent-orchestration` gap-detection output. Update STATE.md *gap parameters + R2 target assignments* JSON block. Add changelog entry. |
+
+### `stellantis-source-download-and-ingest`
+
+| Trigger to edit | Follow-ups |
+| :--- | :--- |
+| Phase-2 / Phase-3 download subagent contract or result envelope shape change | Update this skill's Phase 2 + Phase 3 sections. Update `.harness/DownloadAgent/<slug>-dl.md` template if it exists, otherwise document the inline JSON-block contract. Update `stellantis-lead-agent-subagent-orchestration` if the lead reads the same envelope shape. Update file-ownership matrix. Add changelog entry. |
+| Block-detection heuristics (file-size thresholds, marker scanning rules) change | Update this skill's block-detection section. Update `stellantis-failure-handling` failure-class definitions if a new class surfaces. Add changelog entry. |
+| Retry-mode set changes (`retry-webpage`, `retry-network`, future modes) | Update this skill's retry section. Update tool allow-list (`fetch_webpage` is retry-only — mode gating must be enforced). Add changelog entry. |
 
 ### `stellantis-output-contract`
 
@@ -93,9 +118,11 @@ This skill must remain **compact** (\u2264 300 lines). Volatile content belongs 
 
 | Trigger to edit | Follow-ups |
 | :--- | :--- |
-| A new file under `runs/<run-id>/` is introduced | Apply the *Add a new file under `runs/<run-id>/`* row above. Update this skill's layout tree and writer-ownership table. |
+| A new file under `.harness/` is introduced | Apply the *Add a new file under `.harness/`* row below. Update this skill's layout tree and writer-ownership table. |
 | Writer ownership for an existing file changes | Update this skill's writer-ownership table **and** `automotive-feature-classification/references/file-ownership-matrix.md`. The two must agree. |
 | The pause/resume contract changes | Update this skill and the lead skill's Pause/Resume Protocol section. |
+| A new section is added to `STATE.md` (T1 or T2) | Update `STATE.main.md.tmpl` with the section header + placeholder content. Mark the section [T1] (lifecycle/critical) or [T2] (analytics/audit). Document in the producer skill the exact write trigger (which phase, on which event). Update this skill's STATE-section index and resumability checklist. Update `stellantis-output-contract` if the section surfaces in the deliverable header. Add changelog entry. |
+| Round 1 / Round 2 subagent file conventions change (e.g. naming under `SubAgent/`, `DeepDiveAgent/`) | Update this skill's layout tree. Update `automotive-feature-classification/references/file-ownership-matrix.md`. Update the relevant orchestration / loop / deep-dive skills. Add changelog entry. |
 
 ## Add tips / common pitfalls to a skill
 
@@ -148,17 +175,19 @@ A new foundational skill must not duplicate content from an existing one. Before
 | Add a tool to Lead's allow-list     | Update `automotive-feature-classification/SKILL.md` Tool Allow-List. Update any sub-skill that will use it. Confirm the capability-category mapping in `business-logic/07-tools-and-constraints.md`. Add changelog entry. |
 | Add a tool to Subagent's allow-list | Same as above + **audit ARCH-4**: if the tool is a web-search or browser-rendering tool, the addition requires a business-logic amendment first.                                                                          |
 
-## Add a new file under `runs/<run-id>/`
+## Add a new file under `.harness/`
 
 | Change           | Follow-ups                                                                                                                                                                                             |
 | :--------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| New runtime file | Update `automotive-feature-classification/references/workspace-layout.md` tree. Update `automotive-feature-classification/references/file-ownership-matrix.md` with the writer/reader roles. Update the producer sub-skill or workflow stage. Add changelog entry. |
+| New runtime file | Update `stellantis-run-workspace/SKILL.md` layout tree. Update `automotive-feature-classification/references/workspace-layout.md` tree. Update `automotive-feature-classification/references/file-ownership-matrix.md` with the writer/reader roles. Update the producer sub-skill or workflow stage. If the file is a subagent contract or result envelope, document the JSON block schema inline in the producer skill. Add changelog entry. |
 
 ## Change a decision rule in business-logic
 
 | Change                                | Follow-ups                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| :------------------------------------ | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Add / change / remove a decision rule | Update `business-logic/10-decision-rules.md`. Update `business-logic/06-harness-interface.md` matrix. Update `automotive-feature-classification/references/enums.md::DecisionRule` if new ids. Update `automotive-feature-classification/templates/intermediate-parameter-record.json.tmpl` `allOf` validator. Update `automotive-feature-classification/templates/deliverable.schema.json` `decision_rule` enum. Update `subagent-classification-loop/SKILL.md` rule table. Update `business-logic/09-deliverable.md` cardinality rules if traceability block cardinality changes. Add changelog entry. |
+| :------------------------------------ | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Add / change / remove a decision rule | Update `business-logic/10-decision-rules.md`. Update `business-logic/06-harness-interface.md` matrix. Update `automotive-feature-classification/references/enums.md::DecisionRule` if new ids. Update `automotive-feature-classification/templates/intermediate-parameter-record.json.tmpl` `allOf` validator (including the rule-to-confidence and rule-to-traceability constraints). Update `automotive-feature-classification/templates/deliverable.schema.json` `decision_rule` enum. Update `subagent-classification-loop/SKILL.md` rule table. Update `business-logic/09-deliverable.md` cardinality rules if traceability block cardinality changes. Update consolidation merge rules in `stellantis-lead-agent-subagent-orchestration` if the new rule changes promotion / demotion logic. Add changelog entry. |
+| Change source-type consensus rules (which categories count as independent, demotion targets, promotion triggers) | Update `business-logic/10-decision-rules.md` *Source-type categories and consensus* section. Update `stellantis-decision-rules/SKILL.md` consensus + demotion sections + invariants 9–10. Update `stellantis-lead-agent-subagent-orchestration` consolidator promotion logic. Update `intermediate-parameter-record.json.tmpl` validators. Add changelog entry. |
+| Change inverse-retrieval contract (query templates, when it runs, what flag is recorded) | Update `business-logic/10-decision-rules.md` *Inverse retrieval* section. Update `stellantis-decision-rules/SKILL.md` inverse-retrieval section + invariant 11. Update `stellantis-subagent-classification-loop` and `stellantis-subagent-doc-deep-dive` to honour the new contract. Update `intermediate-parameter-record.json.tmpl` `inverse_retrieval_attempted` field. Add changelog entry. |
 
 ## Before landing any change
 

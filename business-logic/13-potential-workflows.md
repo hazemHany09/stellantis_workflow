@@ -36,12 +36,12 @@ The goal of this document is to make explicit which workflows the skill must sup
 5. Flag each candidate URL for approval with metadata (title, excerpt, why-selected, car identity, run ID).
 6. Agent yields — approval gate open.
 7. Client approves / rejects and sends "resume" signal.
-8. Retrieve-approved. Download (3 retries, backoff). Upload to fresh RAGFlow dataset.
-9. Poll `doc_infos` until all docs ingested (or 60-min per-doc timeout → drop).
-10. Spawn sub-agents partitioned by category.
-11. Each sub-agent queries shared KB per parameter; emits Presence / Status / Classification + traceability blocks.
-12. Orchestrator merges sub-agent outputs. Writes `.harness/` artefacts.
-13. Emit `deliverable.json` + `deliverable.csv` into run workspace. Notify client.
+8. Retrieve-approved. Download (3 retries, backoff). Upload to a fresh KB dataset.
+9. Wait for ingestion until every approved document is queryable (or 60-min per-doc timeout → drop).
+10. Partition the parameter list by category.
+11. Each partition queries the shared KB per parameter; emits Presence / Status / Classification / Confidence + traceability blocks.
+12. Consolidate per-partition outputs (consensus check, inverse-retrieval enforcement, UGC demotion).
+13. Emit `deliverable.json` + `deliverable.csv`. Notify client.
 
 **Exit conditions:** deliverable emitted, workspace sealed, KB archived.
 
@@ -70,7 +70,7 @@ The goal of this document is to make explicit which workflows the skill must sup
 
 **Trigger:** client reviews a W1/W2 deliverable and asks for a complete redo (new sources, different approval decisions, updated CSV, etc.).
 
-**Behaviour:** spawn a new run with a fresh run ID. Completely independent of the original run — new workspace, new KB, new approval round, new sub-agents. Original run's deliverable and `.harness/` are retained.
+**Behaviour:** start a new run with a fresh run ID. Completely independent of the original run — new workspace, new KB, new approval round, new partition execution. Original run's deliverable and internal artefacts are retained.
 
 **Relation to other workflows:** identical to W1 or W2 mechanically. "Re-run" is a client-facing label, not an architectural distinction.
 
@@ -86,11 +86,11 @@ The goal of this document is to make explicit which workflows the skill must sup
 2. Agent performs **targeted** source discovery — query context is the parameter's name and description plus the car identity.
 3. Canonicalise + dedupe against the **already-approved set** of the original run to avoid re-flagging what the client has already seen. Paywall-filter.
 4. **Approval gate is optional** — client chooses per cycle whether to gate or go automated.
-5. Download + upload new sources into the **same RAGFlow dataset** as the original run. Tag each new document with `cycle = N` (N = 2, 3, …).
-6. Ingest (same polling + timeout rules).
-7. Spawn a targeted sub-agent for the flagged parameters. Retrieval filters on `cycle ∈ {1, …, current}` so the new cycle sees all accumulated evidence.
+5. Download + upload new sources into the **same KB dataset** as the original run. Tag each new document with `cycle = N` (N = 2, 3, …).
+6. Ingest (same wait + timeout rules).
+7. Run a targeted classification pass for the flagged parameters. Retrieval filters on `cycle ∈ {1, …, current}` so the new cycle sees all accumulated evidence.
 8. Emit new / updated records for the targeted parameters. **Merge** into the existing deliverable — update records, don't replace. The deliverable header appends a `cycles` block showing what each cycle contributed.
-9. `.harness/` gets a new per-cycle sub-folder recording the targeted sub-agent's run.
+9. The internal workspace gets a new per-cycle audit trail recording the targeted pass.
 
 **Notes:**
 
@@ -109,7 +109,7 @@ The goal of this document is to make explicit which workflows the skill must sup
 **Stages:**
 
 1. Client flags one or more parameters.
-2. Agent re-invokes the sub-agent assigned to each flagged parameter's category, targeting only the flagged parameters.
+2. The classification pass for each flagged parameter's category is re-run, targeting only the flagged parameters.
 3. Retrieval uses the **same KB unchanged** (no new source discovery). No web search is performed.
 4. Updated records merge into the existing deliverable with a `revised_in_cycle = N` marker.
 
@@ -121,7 +121,7 @@ The goal of this document is to make explicit which workflows the skill must sup
 
 **Trigger:** two or more independent W1/W2/W3 invocations target the same `(brand, model, year, market)` tuple simultaneously.
 
-**Behaviour:** each run is fully independent (Q-SCOPE-3). No coordination, no de-duplication, no merging. Each has its own run ID, workspace, KB, approval round, sub-agents, and deliverable. Results may differ between the runs — this is by design (Q-HARN-14 non-determinism accepted).
+**Behaviour:** each run is fully independent (Q-SCOPE-3). No coordination, no de-duplication, no merging. Each has its own run ID, workspace, KB, approval round, classification pass, and deliverable. Results may differ between the runs — this is by design (Q-HARN-14 non-determinism accepted).
 
 **Client-facing note:** if two concurrent runs produce different classifications for the same parameter, the client is expected to resolve the discrepancy manually or initiate a W3 / W4 to converge them.
 
@@ -205,7 +205,7 @@ These are carried forward to the workflow-design phase because they affect imple
 * **WF-2** — Concurrency policy for W7 (fully parallel vs bounded).
 * **WF-3** — Whether W4 requires the client to explicitly list parameters or can auto-propose the list from the original deliverable.
 * **WF-4** — Listener / resume mechanics for Q-SRC-6 (explicit client message vs automated listener).
-* **WF-5** — `.harness/` directory retention alongside deliverable (indefinite vs purged after N days).
+* **WF-5** — Internal-workspace retention alongside deliverable (indefinite vs purged after N days).
 * **WF-6** — Schema-type legend placement (deliverable header vs sidecar schema file).
 
 These are not escalated to the client; they are internal workflow-layer decisions.

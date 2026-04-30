@@ -72,22 +72,25 @@ W1 stages 4–5. After the client has approved at least one URL. Before the inge
 
 | Tool | Actor | Purpose |
 | :--- | :---- | :------ |
-| `fetch_url` | Download subagent | Primary fetch path — supports all file types (HTML, PDF, DOCX, XLSX, PPTX); save to `.harness/downloads/` |
-| `fetch_webpage` | Download subagent | **Webpage-only fallback** — used when `fetch_url` returned a blocked / undersized HTML page (Cloudflare, 403, max-retry exhausted). Renders the page through Serper's webpage_scrape pipeline, which often bypasses simple bot blocks because the request headers, IP egress, and JS rendering differ from `fetch_url`. Markdown only; do not use for binary files. |
+| `fetch_url` | Download subagent | **Primary fetch path** — supports all file types (HTML, PDF, DOCX, XLSX, PPTX); save to `.harness/downloads/`. Always try this first. |
+| `fetch_webpage` | Retry subagent only | **Backup fetch — never used on a first attempt.** The lead may spawn a retry subagent with `mode = retry-webpage` that calls `fetch_webpage` **only** when a previous `fetch_url` attempt on that URL definitively failed due to: (a) rate-limiting / Cloudflare block, (b) network timeout, or (c) authentication failure (HTTP 401/403 on an HTML page). Renders the page through Serper's webpage_scrape pipeline. Markdown only; never use for binary files. |
 | `ragflow_upload` | Download subagent | Upload saved file to KB dataset |
 | `ragflow_run_ingestion` | Lead only | Trigger parse/embed pipeline for all uploaded docs at once |
 | `doc_infos` | Lead only | Poll ingestion status per doc_id |
 | `list_docs` | Lead only | List all docs in dataset |
 | `get_metadata_summary` | Lead only | Sanity check after ingestion |
-| `delete_docs` | Lead only | Remove docs where ingestion irrecoverably failed |
+| `delete_docs` | Lead only | Remove duplicate or failed docs post-ingestion |
 
 ---
 
 ## Phase 1 — Pre-seed STATE.md download tracking
 
-Before dispatching any subagent, the lead initialises the **Source download tracking** section in `.harness/STATE.md` for every approved URL:
+Before dispatching any subagent, the lead initialises two sections in `.harness/STATE.md` for every approved URL:
 
-Set `Attempts = 0`, `Status = pending` for every approved URL. Append event-log line: `"Download phase started — N URLs to process"`.
+1. **Source download tracking** — set `Attempts = 0`, `Status = pending` for every approved URL.
+2. **Per-doc ingestion status** — add a row with `ingestion_status = pending` for every approved URL (using the URL slug as placeholder; `doc_id` filled in after upload succeeds).
+
+Append event-log line: `"Download phase started — N URLs to process"`.
 
 See `STATE.main.md.tmpl` for the table format.
 
@@ -234,7 +237,8 @@ After all download subagents for the current attempt have written their result e
 
 1. **Read each result block** from `.harness/DownloadAgent/*.md`.
 2. **Update STATE.md source download tracking** for each URL: set `Attempts`, `Last Failure Reason`, `File Size (bytes)`, `Local Path`, `Status`.
-3. **Archive subagent working files** to `.harness/Archive/<slug>-dl.md`. Update status in archive.
+3. **Update STATE.md per-doc ingestion status** for each successfully uploaded URL: set `doc_id`, `source_type`, `upload_timestamp`. Leave `ingestion_status = pending`.
+4. **Archive subagent working files** to `.harness/Archive/<slug>-dl.md`. Update status in archive.
 4. **Categorise results:**
    - `status = uploaded` → has `doc_id`; ready for ingestion.
    - `status = rate-limited` → add to **rate-limited queue** (if `attempt_number < 3`).
@@ -419,9 +423,29 @@ On failure of `ragflow_run_ingestion`: retry once after 30 seconds. If second at
 
 ---
 
+## Phase 5b — Deduplicate documents (lead only)
+
+Immediately after `ragflow_run_ingestion` is called and before the pause boundary, the lead checks for duplicate documents in the dataset. All deduplication outcomes (including zero duplicates found) are written to the **[T2] Deduplication log** section in STATE.md. Duplicates arise when the same canonical URL was uploaded more than once (e.g., from retry flows that produced a second `doc_id` for the same source).
+
+1. Call `list_docs(dataset_id=<kb_dataset_id>)` to retrieve all documents currently in the dataset.
+2. Group documents by `canonical_url` (from their metadata). Any group with more than one `doc_id` contains duplicates.
+3. For each duplicate group:
+   - Keep the **first-uploaded** `doc_id` (lowest `created_at` or smallest index in the list).
+   - Collect all other `doc_id` values in the group as duplicates.
+   - Call `delete_docs(dataset_id=<kb_dataset_id>, doc_ids=[<duplicate_id_1>, ...])` to remove them.
+   - Append an event-log line: `"Deleted duplicate doc <id> for <canonical_url> (kept <kept_id>)"`.
+4. Update STATE.md source download tracking: any deleted `doc_id` is removed from the roster; the kept `doc_id` remains.
+5. Append a summary event-log line: `"Deduplication complete — N duplicates removed, M unique documents remain"`.
+
+**When to run:** Always. Even if no duplicates are expected, the list-and-check is cheap and prevents silent double-ingestion corrupting retrieval recall.
+
+**This is a lead-only step.** Subagents are never involved in document management.
+
+---
+
 ## Pause boundary (after ingestion triggered)
 
-Immediately after Phase 5 completes:
+Immediately after Phase 5b completes:
 
 * `RunStatus = paused`
 * `PauseReason = awaiting-client-resume`
@@ -440,9 +464,9 @@ Triggered when user replies `resume` (or any affirmative continuation).
 
 1. Call `doc_infos(doc_ids=[…])` for every `doc_id` in the roster.
 2. For each document, check parsing/run status:
-   * `done` → set `SourceLifecycle = Ingested`.
+   * `done` → set `SourceLifecycle = Ingested`. Update STATE.md per-doc ingestion status: `ingestion_status = done`, `ingestion_completed_at = <ISO>`.
    * `running` → still ingesting.
-   * `failed` → set `SourceLifecycle = Dropped_IngestTimeout`, `FailureStage = ingestion`. Record in `.harness/sources_excluded.md`.
+   * `failed` → set `SourceLifecycle = Dropped_IngestTimeout`, `FailureStage = ingestion`. Record in `.harness/sources_excluded.md`. Update STATE.md per-doc ingestion status: `ingestion_status = failed`, `failure_reason = <reason>`.
 3. Apply the **60-minute per-document ceiling** (from `ingestion_started_at`):
    * If `now - ingestion_started_at < 60 min` and still `running` → pause again with `PauseReason = awaiting-ingestion-completion`. Ask user to wait; provide estimated time remaining.
    * If `now - ingestion_started_at ≥ 60 min` and still `running` → drop; `failure_reason = ingestion-timeout-60min`. Record in `.harness/sources_excluded.md`.

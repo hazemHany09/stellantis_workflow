@@ -1,10 +1,12 @@
 # Main STATE.md — Template
 
 <!-- Replace every <<placeholder>> with concrete values. Preserve section order. -->
+<!-- [T1] = resume-critical: MUST be written before any pause or RunStage change -->
+<!-- [T2] = telemetry/audit: written at stage completion; not required for resume -->
 
 # Run STATE — <<brand>> <<model>> <<model_year>> <<market_canonical>>
 
-## Header
+## [T1] Header
 
 | Field                            | Value                                                    |
 | :------------------------------- | :------------------------------------------------------- |
@@ -24,11 +26,11 @@
 | Market (canonical)               | `<<ISO alpha-2 or zone code>>`                           |
 | Resolved full-option trim        | `<<string or "auto-selected: <name>">>`                  |
 | KB dataset id                    | `<<ragflow dataset id>>`                                 |
-| Params CSV path                  | `runs/<<run-id>>/params.csv`                             |
+| Params CSV path                  | `.harness/params.csv`                                    |
 | Params CSV sha256                | `<<hex>>`                                                |
 | Total parameters in CSV          | `<<integer>>`                                            |
 
-## Summary counts
+## [T1] Summary counts
 
 Updated by the lead after every consolidation.
 
@@ -49,7 +51,19 @@ Updated by the lead after every consolidation.
 | Not yet classified (pending subagent) | `<<n>>` |
 | Failed records (subagent failure)    | `<<n>>` |
 
-## Source stats
+### [T2] Confidence distribution
+
+Updated after each consolidation pass (Round 1 and Round 2).
+
+| Bucket | Count |
+| :----- | :---- |
+| Confidence = consensus | `<<n>>` |
+| Confidence = single-source | `<<n>>` |
+| Round 2 upgrades (single-source → consensus) | `<<n>>` |
+| Round 2 verdict changes (rule promoted) | `<<n>>` |
+| Rule 4 records remaining after Round 2 | `<<n>>` |
+
+## [T1] Source stats
 
 | Bucket                                   | Count |
 | :--------------------------------------- | :---- |
@@ -66,7 +80,7 @@ Updated by the lead after every consolidation.
 | Dropped — upload failure                 | `<<n>>` |
 | Dropped — ingestion timeout              | `<<n>>` |
 
-## Source download tracking
+## [T1] Source download tracking
 
 Per-URL retry and block-detection state. Updated by the lead after each download subagent reports in. `Attempts` is incremented on each dispatch. Sources with `Attempts ≥ 3` that are still failing are auto-flagged without user prompt.
 
@@ -84,19 +98,133 @@ Per-URL retry and block-detection state. Updated by the lead after each download
 - `auto-flagged-invalid` — attempted ≥ 3 times; automatically excluded
 - `excluded` — dropped to `sources_excluded.md` (any reason)
 
-## Category roster
+## [T1] Per-doc ingestion status
+
+One row per uploaded document. Rows written at upload (Phase 5); `ingestion_status` and `ingestion_completed_at` updated at ingestion verify (Stage 5). Required for post-crash recovery — agent reconstructs which doc_ids exist in KB without calling `doc_infos`.
+
+| doc_id | canonical_url | slug | source_type | upload_timestamp | ingestion_status | ingestion_completed_at | failure_reason |
+| :----- | :------------ | :--- | :---------- | :--------------- | :--------------- | :--------------------- | :------------- |
+| `<<id>>` | `<<url>>` | `<<slug>>` | `<<type>>` | `<<ISO>>` | `pending` | `—` | `—` |
+
+**`ingestion_status` values:** `pending` → `running` → `done` \| `failed` \| `dropped`
+
+## [T2] KB dataset snapshot
+
+Written once after Stage 5 success gate passes. Captures KB state at classification start.
+
+| Field | Value |
+| :---- | :---- |
+| Dataset ID | `<<id>>` |
+| Documents ingested | `<<n>>` |
+| Documents failed / dropped | `<<n>>` |
+| Snapshot timestamp | `<<ISO>>` |
+
+### Source type distribution
+
+| Source type | Doc count |
+| :---------- | :-------- |
+| `manufacturer_official_spec` | `<<n>>` |
+| `manufacturer_owner_manual` | `<<n>>` |
+| `dealer_fleet_guide` | `<<n>>` |
+| `third_party_press_long_form` | `<<n>>` |
+| `third_party_aggregator` | `<<n>>` |
+| `manufacturer_video` | `<<n>>` |
+| `forum_or_ugc` | `<<n>>` |
+
+## [T1] Category roster
 
 | Category   | Params | Subagents | Consolidated | Status      |
 | :--------- | :----- | :-------- | :----------- | :---------- |
 | `<<cat>>`  | `<<n>>` | `<<list of agent-names>>` | `<<n>> / <<total>>` | `<<RunStage-ish>>` |
 
-## Subagent roster
+## [T1] Round 1 subagent roster
 
 | Agent name  | Category | Parameters | Status (`SubagentStatus`) | Spawned    | Completed  |
 | :---------- | :------- | :--------- | :------------------------ | :--------- | :--------- |
 | `<<name>>`  | `<<cat>>` | `<<n>>`   | `<<value>>`               | `<<ISO>>`  | `<<ISO>>`  |
 
-## Loaded skills
+## [T1] Round 2 subagent roster (deep-dive)
+
+Written empty (header + empty table) at Round 1 consolidation start. Rows added at Round 2 spawn. Required to detect which R2 deep-dive partitions need re-spawn on mid-R2 resume.
+
+| Agent name | Target doc_id | Target doc slug | Gap parameters | Status (`SubagentStatus`) | Spawned | Completed |
+| :--------- | :------------ | :-------------- | :------------- | :------------------------ | :------ | :-------- |
+| `<<name>>` | `<<doc_id>>` | `<<slug>>` | `<<param_ids, comma-sep>>` | `<<value>>` | `<<ISO>>` | `<<ISO>>` |
+
+## [T1] Gap parameters and R2 target assignments
+
+Written once at Round 1 → Round 2 hand-off (lead consolidation pass A). **Read-only after this point.** If R2 cap is adjusted mid-run, append a note to the event log only — do not edit this block.
+
+Required for inter-round resume: agent reconstructs the full R2 plan from this block alone without reading `.harness/document-promise-board.md`.
+
+```json
+{
+  "gap_parameters": [
+    {
+      "param_id": "<<id>>",
+      "param_name": "<<name>>",
+      "category": "<<cat>>",
+      "round1_rule": "<<Rule 3 | Rule 4 | Rule 1 | Rule 5>>",
+      "round1_confidence": "<<single-source | null>>",
+      "gap_reason": "<<rule4-no-evidence | rule3-vague | single-source-corroboration-needed>>",
+      "assigned_to_agent": "<<agent-name or null>>"
+    }
+  ],
+  "r2_target_assignments": [
+    {
+      "agent_name": "<<name>>",
+      "target_doc_id": "<<id>>",
+      "target_doc_slug": "<<slug>>",
+      "target_doc_local_path": ".harness/downloads/<<slug>>.<ext>",
+      "gap_param_ids": ["<<id1>>", "<<id2>>"],
+      "promise_score": 0.0,
+      "selection_rationale": "<<short string>>"
+    }
+  ],
+  "gap_params_without_r2_target": ["<<param_id>>"],
+  "r2_cap_reached": false,
+  "generated_at": "<<ISO>>"
+}
+```
+
+## [T2] Stage timing telemetry
+
+`started_at` written at stage entry; `completed_at` at stage exit.
+
+| Stage | Started at | Completed at | Duration (s) |
+| :---- | :--------- | :----------- | :----------- |
+| `preflight` | `<<ISO>>` | `<<ISO>>` | `<<n>>` |
+| `parse-request` | `<<ISO>>` | `<<ISO>>` | `<<n>>` |
+| `resolve-trim` | `<<ISO>>` | `<<ISO>>` | `<<n>>` |
+| `source-discovery` | `<<ISO>>` | `<<ISO>>` | `<<n>>` |
+| `download-and-ingest` | `<<ISO>>` | `<<ISO>>` | `<<n>>` |
+| `classification-round-1` | `<<ISO>>` | `<<ISO>>` | `<<n>>` |
+| `classification-round-2` | `<<ISO>>` | `<<ISO>>` | `<<n>>` |
+| `emit-deliverable` | `<<ISO>>` | `<<ISO>>` | `<<n>>` |
+
+## [T2] Warnings and advisories summary
+
+Updated after each consolidation pass (Round 1 and Round 2).
+
+| Bucket | Count |
+| :----- | :---- |
+| Run-level warnings | `<<n>>` |
+| Category-level warnings | `<<n>>` |
+| Rule 2a conflicts (Yes, Conflict) | `<<n>>` |
+| Rule 2b conflicts (Disputed, Conflict) | `<<n>>` |
+| Undefined-tier advisories | `<<n>>` |
+| Out-of-list findings | `<<n>>` |
+| R2 cap reached — unresolved gap params | `<<n>>` |
+
+## [T2] Deduplication log
+
+Written at Phase 5b. Append-only. Empty table = explicit proof dedup ran and found nothing.
+
+| Kept doc_id | Deleted doc_id | canonical_url | Reason |
+| :---------- | :------------- | :------------ | :----- |
+| `<<id>>` | `<<id>>` | `<<url>>` | `duplicate-upload` |
+
+## [T2] Loaded skills
 
 Consolidated by lead agent as skills are loaded at each stage. Split into lead-only and subagent-reported.
 
@@ -113,28 +241,41 @@ Consolidated by lead agent as skills are loaded at each stage. Split into lead-o
 | :--------- | :------------ |
 | `<<name>>` | `stellantis-domain-context`, `stellantis-decision-rules`, `<<other>>` |
 
-## Decisions made during this run
+## [T2] Decisions made during this run
 
 One line per notable decision — e.g. trim auto-selection, market canonicalisation, paywall drops, client approval resolution, ingestion timeouts.
 
 - `<<ISO>>` — `<<short description>>`
 
-## Event log
+## [T1] Event log
 
 Append-only. Mirrored into `.harness/event-log.md`.
 
 - `<<ISO>>` · `<<stage>>` · `<<event>>`
 
-## Pointers
+## [T2] Pointers
 
 - Workflow: `<<src/workflows/...>>`
-- Frozen CSV: `runs/<<run-id>>/params.csv`
-- Deliverable (JSON): `runs/<<run-id>>/deliverable.json`
-- Deliverable (CSV): `runs/<<run-id>>/deliverable.csv`
-- Source candidate list: `runs/<<run-id>>/source-candidate-list.md`
-- Approved sources: `runs/<<run-id>>/source-approved.md`
-- Category STATEs: `runs/<<run-id>>/.harness/Category/`
-- Subagent files (live): `runs/<<run-id>>/.harness/SubAgent/`
-- Archive: `runs/<<run-id>>/.harness/Archive/`
-- Sources excluded: `runs/<<run-id>>/.harness/Archive/sources_excluded.md`
-- Advisories: `runs/<<run-id>>/.harness/advisories/`
+- Frozen CSV: `.harness/params.csv`
+- Deliverable (JSON): `<<brand>>-<<model>>-<<year>>-<<market>>-<<run-id>>.json`
+- Deliverable (CSV): `<<brand>>-<<model>>-<<year>>-<<market>>-<<run-id>>.csv`
+- Source candidate list: `.harness/source-candidates.md`
+- Approved sources: `.harness/source-approved.md`
+- Category files: `.harness/Category/`
+- Subagent files (live): `.harness/SubAgent/`
+- Deep-dive agent files (live): `.harness/DeepDiveAgent/`
+- Archive: `.harness/Archive/`
+- Document promise board: `.harness/document-promise-board.md`
+- Partition summaries: `.harness/partition-summaries.md`
+- Sources excluded: `.harness/sources_excluded.md`
+- Advisories: `.harness/advisories/`
+
+## Write invariants (normative)
+
+1. All [T1] sections must reflect current state before setting `RunStatus = paused`.
+2. All [T1] sections must reflect current state before changing `RunStage`.
+3. [T2] sections are best-effort — a crash mid-T2 write does not corrupt resumability.
+4. **Gap parameters + R2 target assignments** is write-once. Never edited after R1→R2 hand-off.
+5. **Round 2 subagent roster** section must exist (even empty) before first R2 subagent spawns.
+6. **Deduplication log** written even when zero duplicates found.
+7. **Per-doc ingestion status** rows written at upload, not at ingestion trigger.

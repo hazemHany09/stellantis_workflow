@@ -88,6 +88,23 @@ The deliverable is dual-serialised, written to the run workspace root:
 
 Both files are emitted on every run. The internal `.harness/` folder is not part of the client-facing deliverable but is retained alongside it.
 
+### CSV emission — use a Python script
+
+Direct LLM-authored CSV is error-prone: field quoting, comma escaping, and multi-value folding (e.g. multiple `source_url` values per record) regularly produce malformed output. Instead, the lead must produce the CSV by writing and executing a short Python script that reads the JSON deliverable and converts it to CSV.
+
+**Procedure:**
+
+1. Write `.harness/scripts/json_to_csv.py` — a self-contained Python 3 script that:
+   - Reads `<brand>-<model>-<year>-<market>-<run-id>.json`.
+   - Iterates `records[]` in order.
+   - Flattens each record to a row per the column specification in `templates/deliverable.csv.columns.md`.
+   - Uses Python's `csv.writer` (not string concatenation) for correct quoting.
+   - Writes to `<brand>-<model>-<year>-<market>-<run-id>.csv`.
+2. Execute the script via the code execution tool.
+3. Verify the output file exists and its row count equals the JSON `records[]` length.
+
+If the code execution tool is unavailable, fall back to direct CSV authoring — but note the fallback in the event log. The JSON deliverable is always the authoritative source; the CSV is derived from it.
+
 ### Record ordering
 
 Records appear in the **exact order of the frozen reference list** — preserving category grouping and author intent. CSV row order = JSON array order. Stable across runs, which makes diffing trivial.

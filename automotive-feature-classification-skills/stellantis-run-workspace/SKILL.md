@@ -37,8 +37,11 @@ Inline, on any read or write to `.harness/` or the project-root deliverables.
 ```
 <project-root>/
 ├── .harness/                                         # ALL agent-internal state (one per car)
-│   ├── STATE.md                                      # comprehensive run state (lead-write)
+│   ├── STATE.md                                      # comprehensive run state (lead-write; T1/T2 tiered)
 │   ├── params.csv                                    # frozen reference list snapshot
+│   ├── event-log.md                                  # append-only mirror of STATE.md event log
+│   ├── document-promise-board.md                     # R1 subagent promise scores aggregated by lead
+│   ├── partition-summaries.md                        # R1 partition summary per subagent
 │   ├── downloads/                                    # PRE-UPLOAD STAGING AREA
 │   │   ├── <slug>.md                                 # downloaded & converted markdown
 │   │   ├── <slug>.pdf                                # downloaded PDF
@@ -48,7 +51,9 @@ Inline, on any read or write to `.harness/` or the project-root deliverables.
 │   ├── Category/
 │   │   └── <category>.md                             # consolidated per-category records (lead-write)
 │   ├── SubAgent/
-│   │   └── <agent-name>.md                           # active classification subagent working file (subagent-write)
+│   │   └── <agent-name>.md                           # active Round 1 classification subagent working file (subagent-write)
+│   ├── DeepDiveAgent/
+│   │   └── <agent-name>.md                           # active Round 2 deep-dive subagent working file (subagent-write)
 │   ├── Archive/
 │   │   ├── <agent-name>.md                           # consolidated subagent files moved post-merge
 │   │   └── <slug>-dl.md                              # archived download subagent working files
@@ -86,7 +91,8 @@ Strict ownership prevents corruption when subagents run concurrently.
 | `.harness/DownloadAgent/<slug>-dl.md` | **Lead** seeds the contract block at spawn; **named download subagent** writes scratch + result envelope. |
 | `.harness/Category/*.md` | **Lead only.** Updated during consolidation. |
 | `.harness/SubAgent/<agent-name>.md` | **Lead** seeds the contract block at spawn; **named classification subagent** writes everything after. |
-| `.harness/Archive/*.md` | **Lead only.** Files are moved here after consolidation (both download and classification subagents). |
+| `.harness/DeepDiveAgent/<agent-name>.md` | **Lead** seeds the contract block at spawn; **named deep-dive subagent** writes scratch + result envelope. |
+| `.harness/Archive/*.md` | **Lead only.** Files are moved here after consolidation (download, Round 1, and Round 2 subagents). |
 | `.harness/advisories/*` | **Classification subagents** for parameter-level advisories; **lead** for run-level advisories. |
 | `.harness/source-*.md` | **Lead only.** |
 
@@ -96,21 +102,31 @@ Subagents never touch any file outside their own `.harness/SubAgent/<agent-name>
 
 ### `.harness/STATE.md` (comprehensive run state)
 
+Sections are tiered: **[T1] = resume-critical** (must be written before any pause or RunStage change); **[T2] = telemetry/audit** (written at stage completion; not required for resume).
+
 Records, at minimum:
-- `run_id`, `submitted_at`, `completed_at`
-- Resolved `car_identity` and `resolved_full_option_trim`
-- Frozen reference-list snapshot hash
-- Workflow id and (if W1) mode
-- KB dataset ID
-- Source counts: `{approved, rejected, uploaded, failed, ingested}`
-- Download & upload tracking:
-  - Per-URL: download timestamp, file size, local path in `.harness/downloads/`
-  - Per-URL: upload attempt timestamps, retry counts, 5-min timeout status
-- Upload completion gate decision (timestamp, outcome)
-- Ingestion tracking:
-  - Per-doc: ingestion_started_at, ingestion_completed_at, final status
-- Per-category roster (categories × subagent partitions × status)
-- Comprehensive event log (every step logged here)
+
+**[T1] sections:**
+- `run_id`, `submitted_at`, `completed_at`, workflow, RunStage, RunStatus, PauseReason
+- Resolved `car_identity` and `resolved_full_option_trim`; KB dataset ID; CSV hash; total parameters
+- Source stats funnel (candidates → approved → ingested → dropped)
+- Source download tracking: per-URL retry state, file size, local path, status
+- Per-doc ingestion status: one row per uploaded doc with `doc_id`, `ingestion_status`, `ingestion_completed_at`
+- Category roster (categories × subagent partitions × consolidated count × status)
+- Round 1 subagent roster (agent-name, category, params, SubagentStatus, spawned/completed timestamps)
+- Round 2 subagent roster (agent-name, target doc_id, gap params, SubagentStatus, spawned/completed timestamps) — written empty at R1 consolidation start
+- Gap parameters + R2 target assignments (JSON block, write-once at R1→R2 hand-off)
+- Event log (append-only)
+
+**[T2] sections:**
+- Confidence distribution sub-table (consensus vs single-source counts; R2 upgrade counts)
+- KB dataset snapshot (doc count, source type distribution) — written once after Stage 5 success
+- Stage timing telemetry (started_at / completed_at / duration per stage)
+- Warnings and advisories summary (Rule 2a/2b conflict counts, advisory counts)
+- Deduplication log (kept/deleted doc_id pairs from Phase 5b) — written even when empty
+- Loaded skills (lead + subagent)
+- Decisions made
+- Pointers
 
 ### `.harness/downloads/` (pre-upload staging)
 
@@ -168,10 +184,14 @@ If the user's reply is insufficient (e.g. still ambiguous), re-prompt — never 
 
 For a run to be safely resumable from a clean restart:
 - `.harness/STATE.md` must always reflect the latest committed state (atomic-ish writes).
+- All [T1] sections must be flushed before any `RunStatus = paused` or `RunStage` change.
 - The frozen `.harness/params.csv` must remain unchanged for the entire run, including all gap-fill cycles.
 - Subagent working files must be self-describing — the contract block alone is enough to re-spawn.
 - The `.harness/sources_excluded.md` log must be append-only.
 - Downloaded files in `.harness/downloads/` are preserved and referenced in STATE.md.
+- The Round 2 subagent roster section must exist (even empty) before the first R2 subagent spawns.
+- The gap parameters + R2 target assignments JSON block must be written before any R2 subagent spawns.
+- Per-doc ingestion status rows are written at upload, not at ingestion trigger — post-crash agent can see which doc_ids exist without calling `doc_infos`.
 
 ## Tips & common pitfalls
 

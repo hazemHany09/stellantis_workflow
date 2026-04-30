@@ -44,9 +44,11 @@ Subagents never use `google_search*` or `browser_render*`. Any edit that implies
 
 ## 8. `.harness/` writer discipline
 
-Main `STATE.md` and `.harness/Category/*.md` are **lead-only writable**. `.harness/SubAgent/<agent-name>.md` is subagent-writable after spawn (the contract header is lead-seeded once and never re-edited).
+Main `STATE.md` and `.harness/Category/*.md` are **lead-only writable**. `.harness/SubAgent/<agent-name>.md` (Round 1 classification) and `.harness/DeepDiveAgent/<agent-name>.md` (Round 2 deep-dive) are subagent-writable after spawn — the contract header is lead-seeded once and never re-edited. `.harness/DownloadAgent/<slug>-dl.md` follows the same convention for download subagents.
 
-Any edit that adds a new file under `runs/<run-id>/` must specify the writer in `automotive-feature-classification/references/file-ownership-matrix.md` before it is created at runtime.
+Any edit that adds a new file under `.harness/` must specify the writer in `automotive-feature-classification/references/file-ownership-matrix.md` and in the layout tree of `stellantis-run-workspace/SKILL.md` before it is created at runtime. The two locations must agree.
+
+When adding a new section to `STATE.md`, update `STATE.main.md.tmpl` with the section header + placeholder, mark the section [T1] (lifecycle/critical) or [T2] (analytics/audit), document the write trigger (which phase, which event) in the producer skill, and verify it aligns with the resumability checklist in `stellantis-run-workspace`.
 
 ## 9. Deliverable schema is backward-compatible
 

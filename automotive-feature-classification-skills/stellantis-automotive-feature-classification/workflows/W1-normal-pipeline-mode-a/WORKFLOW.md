@@ -33,7 +33,8 @@ Trigger: the user submits a classification request. URLs and domains are optiona
 
 1. Extract `brand`, `model`, `model_year`, `market_input`. Normalise `market_input` to `market_canonical` (ISO alpha-2 for countries; zone codes for zones such as `EU`, `MEA`, `GCC`, `NAFTA`).
 2. Extract `client_urls[]` and `client_domains[]` if present. A token with a scheme (`http://`, `https://`) is a URL; a bare host (`bmw.com`) is a domain. Both fields default to empty — their absence is valid and handled in Stage 3.
-3. If any of the four required fields is missing — **pause** with `PauseReason = missing-required-input`. Ask only for the missing field. On resume, repeat this stage.
+3. Extract `client_categories[]` if the client supplies parameter category names (e.g. "only Safety, Comfort, and Infotainment" or an explicit list of category names). If present, record them in STATE.md as `requested_categories`. If absent, `requested_categories` is empty — meaning all categories from `params.csv` apply.
+4. If any of the four required fields is missing — **pause** with `PauseReason = missing-required-input`. Ask only for the missing field. On resume, repeat this stage.
 
 **Outputs.** Preflight can create the run workspace (see [`../../SKILL.md`](../../SKILL.md) §2). Main STATE.md is initialised from [`../../templates/STATE.main.md.tmpl`](../../templates/STATE.main.md.tmpl).
 
@@ -200,7 +201,7 @@ Exit stage when all subagents are archived or failed (with lead-written Rule-4 f
    * Telemetry block.
    * `records[]` in CSV row order, one per parameter in `params.csv`.
    * Footer `sources_excluded`; plus run-level warnings.
-2. Assemble `deliverable.csv` per [`../../templates/deliverable.csv.columns.md`](../../templates/deliverable.csv.columns.md).
+2. **Produce `deliverable.csv` via Python script** — write `.harness/scripts/json_to_csv.py` that reads the JSON deliverable and converts it to CSV using Python's `csv.writer` (not string concatenation). Execute the script. Verify row count equals `records[]` length. See `stellantis-output-contract` for the full procedure and column specification.
 3. Write both to the run workspace root.
 4. Set RunStage = `deliverable`.
 
@@ -212,9 +213,12 @@ Exit stage when all subagents are archived or failed (with lead-written Rule-4 f
 
 **Actions.**
 
-1. Set RunStatus = `complete`, RunStage = `complete`, `completed_at` timestamp.
-2. Append a final event-log line pointing at the two deliverable files.
-3. Post a summary message to the user with counts and file paths.
+1. Write the final STATE.md update (if not already done after classification — see `lead-agent-subagent-orchestration` "Final STATE.md update" section). This is mandatory.
+2. Set RunStatus = `complete`, RunStage = `complete`, `completed_at` timestamp.
+3. Append a final event-log line pointing at the two deliverable files.
+4. Post a summary message to the user with counts and file paths.
+
+**The lead must not skip step 1.** Agents sometimes proceed from deliverable emission directly to the user-facing summary without ever writing the final run state. If STATE.md still shows `RunStage = classification` or any intermediate stage at this point, fix it now.
 
 ***
 

@@ -34,8 +34,9 @@ The framework is distributed as **independently importable skill packages** (one
 | `stellantis-source-discovery-without-client-domains/` | Lead context — Mode B discovery                                        |
 | `stellantis-source-validation/`                       | Lead context — candidate validation                                    |
 | `stellantis-source-download-and-ingest/`              | Lead context — download + ingest                                       |
-| `stellantis-lead-agent-subagent-orchestration/`       | Lead context — partition + spawn + consolidate                         |
-| `stellantis-subagent-classification-loop/`            | Subagent context — KB retrieval + classification                       |
+| `stellantis-lead-agent-subagent-orchestration/`       | Lead context — partition + spawn + consolidate (two-round R1/R2 flow)  |
+| `stellantis-subagent-classification-loop/`            | Subagent context — Round 1 search-mode KB retrieval + classification   |
+| `stellantis-subagent-doc-deep-dive/`                  | Subagent context — Round 2 deep-dive single-document read for gap params |
 
 **Core-only assets** (not duplicated in sub-skills):
 - `stellantis-automotive-feature-classification/references/` — enums, contracts, ownership matrix, workspace layout

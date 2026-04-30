@@ -100,29 +100,39 @@ Executed exactly once per run, before loading any workflow or sub-skill:
 7. **Resolve trim** — Call `stellantis-car-trim-resolution` sub-skill, record result in STATE.md.
 8. **Create KB dataset** per `stellantis-knowledge-base-protocol`. Record dataset_id in STATE.md.
 9. **Freeze the reference list:** copy `artifacts/params.csv` → `.harness/params.csv`, record hash in STATE.md.
+   - If `requested_categories` is non-empty, filter `.harness/params.csv` to rows whose `Domain / Category` value matches one of the requested category names (case-insensitive). Write the filtered result back to `.harness/params.csv`. Record both the full-list hash and the filtered-list hash in STATE.md, and note which categories were requested.
+   - If `requested_categories` is empty, all categories from the CSV are in scope. Do **not** assume a fixed count such as 160 — the actual number is whatever the frozen CSV contains after any filtering.
 10. **Update STATE.md** event log: "Preflight complete, ready for source discovery."
 
 ### Roles & Responsibilities
 
-High-level split:
+The lead is a **pure orchestrator**. It acquires sources, manages the KB, partitions work, spawns subagents, and consolidates their results. It does **not** classify parameters itself — that is the subagent's sole job.
 
-| Concern                                                    | Lead agent | Subagent |
-| :--------------------------------------------------------- | :--------- | :------- |
-| Parse request and resolve the 4 required fields            | ✅          | —        |
-| Resolve ambiguous car identity + full-option trim          | ✅          | —        |
-| Create + manage the KB dataset                             | ✅          | —        |
-| Create .harness folder structure immediately               | ✅          | —        |
-| Source discovery (web search) + validation                 | ✅          | —        |
-| Post candidate URL list to user; interpret free-text reply | ✅          | —        |
-| Download + save to .harness/downloads/ + upload gate       | ✅          | —        |
-| Partition parameters + spawn subagents + monitor           | ✅          | —        |
-| KB retrieval per parameter + read chunks + write verdicts  | —          | ✅        |
-| Update per-document metadata with found parameters         | —          | ✅        |
-| Consolidate subagent working files into category STATE     | ✅          | —        |
-| Archive consolidated subagent files                        | ✅          | —        |
-| Emit deliverable.json + deliverable.csv                    | ✅          | —        |
+The subagent is a **pure worker**. It retrieves evidence from the KB, applies decision rules, and writes records into its working file. It does **not** discover sources, upload documents, spawn other agents, or touch any file outside its own working file.
 
-**Hard rule:** subagents **never** use open-web search, browser rendering, or `fetch_url`. Their only tools are the knowledge-base retrieval/inspection set — `retrieval`, `retrieve_knowledge_graph`, `list_chunks`, `ragflow_download`, `doc_infos`, `get_metadata_summary`.
+When in doubt about who should do something: if it touches the web, the KB dataset, or STATE.md → lead. If it touches the KB retrieval API to answer a classification question → subagent.
+
+| Concern | Lead | Subagent |
+| :--- | :--- | :--- |
+| Parse request; resolve 4 required fields | ✅ | — |
+| Resolve car identity + full-option trim | ✅ | — |
+| Create + manage KB dataset | ✅ | — |
+| Create `.harness/` folder structure | ✅ | — |
+| Source discovery (web search) + validation | ✅ | — |
+| Post candidate URL list; interpret approval reply | ✅ | — |
+| Download sources → `.harness/downloads/` | ✅ (via download subagents) | — |
+| Upload to KB; run ingestion; deduplicate docs | ✅ | — |
+| Partition parameters; pre-seed working files; spawn subagents | ✅ | — |
+| Monitor subagent progress; detect timeouts; re-spawn on failure | ✅ | — |
+| KB retrieval per parameter; read chunks; apply decision rules | — | ✅ |
+| Stage metadata patches in result envelope | — | ✅ |
+| Apply metadata patches via `batch_update_doc_metadata` | ✅ | — |
+| Validate + consolidate subagent envelopes into category STATE | ✅ | — |
+| Archive subagent working files | ✅ | — |
+| Write final STATE.md update | ✅ | — |
+| Emit `deliverable.json` + `deliverable.csv` | ✅ | — |
+
+**Hard rule:** subagents **never** use open-web search, browser rendering, `fetch_url`, or `fetch_webpage`. Their only tools are the knowledge-base retrieval/inspection set — `retrieval`, `retrieve_knowledge_graph`, `list_chunks`, `ragflow_download`, `doc_infos`, `get_metadata_summary`.
 
 **Concurrency:** maximum **3 subagents running concurrently** (enforced by `lead-agent-subagent-orchestration` skill).
 
@@ -133,13 +143,16 @@ High-level split:
 The framework uses a **hybrid** state layout. All files live under `.harness/`, organized by concern:
 
 **Client-facing (still readable in .harness/):**
-- `.harness/STATE.md` (lead-write only) — submission date, car identity, KB dataset ID, CSV hash, summary counts, per-category roster, event log
+- `.harness/STATE.md` (lead-write only) — tiered [T1]/[T2] sections: run metadata, car identity, KB dataset ID, CSV hash, per-doc ingestion status, category + subagent rosters (R1 + R2), gap parameters + R2 target assignments, summary counts, event log, and audit/telemetry sections
 
 **Agent-internal (`.harness/`):**
 - `.harness/downloads/` — Pre-upload markdown & binary files (staging area before KB ingest)
+- `.harness/document-promise-board.md` — R1 document promise scores aggregated across partitions; drives R2 target selection
+- `.harness/partition-summaries.md` — per-partition summary from each R1 subagent
 - `.harness/Category/<category>.md` (lead-write only) — consolidated per-parameter records, assigned subagents, category warnings
-- `.harness/SubAgent/<agent-name>.md` (subagent-write) — contract JSON header + scratch + final output
-- `.harness/Archive/<agent-name>.md` — consolidated files moved after merge
+- `.harness/SubAgent/<agent-name>.md` (subagent-write) — Round 1 subagent: contract JSON header + scratch + final output
+- `.harness/DeepDiveAgent/<agent-name>.md` (subagent-write) — Round 2 deep-dive subagent: contract JSON header + scratch + final output
+- `.harness/Archive/<agent-name>.md` — consolidated files moved after merge (both rounds)
 - `.harness/advisories/` — undefined-tier advisories + out-of-list findings (internal only)
 - `.harness/params.csv` — frozen reference snapshot
 - `.harness/source-candidates.md` — validated candidate list before approval

@@ -1,6 +1,6 @@
 # 14 — Client Questions (product-facing)
 
-This document converts the working assumptions recorded in `11-assumptions.md` into concrete questions to put to the client. **It deliberately excludes internal-implementation decisions** (e.g. RAGFlow polling cadence, retention in days, KB chunking, partition heuristics, tool vendors). Only questions that change the **product's behaviour as the client experiences it** — inputs, outputs, workflows, trade-offs visible in the deliverable — are included.
+This document converts the working assumptions recorded in `11-assumptions.md` into concrete questions to put to the client. **It deliberately excludes internal-implementation decisions** (e.g. ingestion-status polling cadence, retention in days, KB chunking, partition heuristics, tool vendors). Only questions that change the **product's behaviour as the client experiences it** — inputs, outputs, workflows, trade-offs visible in the deliverable — are included.
 
 Each question states:
 
@@ -239,7 +239,7 @@ This is directly distinguishable from Rule 5 (explicit absence), which emits `Pr
 
 ### Q-C-15 — Evidence for undefined tiers — disregard and advise?
 
-**Assumption.** If a source describes the feature at a tier not defined in `params.csv` for that parameter (e.g. source says "Basic" but the CSV only defines `High`), we **disregard** that source for classification and record an internal advisory note (in `.harness/`) so the CSV can be evolved later. The advisory is **not** part of the client-facing deliverable.
+**Assumption.** If a source describes the feature at a tier not defined in `params.csv` for that parameter (e.g. source says "Basic" but the CSV only defines `High`), we **disregard** that source for classification and record an internal advisory note so the CSV can be evolved later. The advisory is **not** part of the client-facing deliverable.
 
 **Why we ask.** The alternative is to surface these findings directly to you so you can adjust the CSV in near real-time.
 
@@ -249,13 +249,13 @@ This is directly distinguishable from Rule 5 (explicit absence), which emits `Pr
 * (B) Surface advisories in the deliverable (e.g. a `schema_gaps` section).
 * (C) Treat undefined-tier evidence as Rule 3 (`Unable to Decide`), not as "disregarded".
 
-**Risk if wrong.** With (A), the `params.csv` evolves only when developers inspect `.harness/`. With (B), every run ships extra noise.
+**Risk if wrong.** With (A), the `params.csv` evolves only when developers inspect the internal advisory log. With (B), every run ships extra noise.
 
 ***
 
 ### Q-C-16 — Out-of-list findings — hidden from deliverable?
 
-**Assumption.** If a source describes a feature that does not exist as a parameter in `params.csv`, we record it in `.harness/` for developer review only. It does not appear in the client-facing deliverable.
+**Assumption.** If a source describes a feature that does not exist as a parameter in `params.csv`, we record it internally for developer review only. It does not appear in the client-facing deliverable.
 
 **Why we ask.** Same trade-off as Q-C-15. You may want to see out-of-list findings.
 
@@ -341,7 +341,7 @@ This is directly distinguishable from Rule 5 (explicit absence), which emits `Pr
 * Counts: Total Parameters, Yes, No, Conflict, Unable to Decide.
 * Distribution by schema type (Basic / Medium / High).
 * Full list of Conflict and Unable-to-Decide parameters.
-* Extended telemetry: approved / ingested / failed source counts, ingestion and classification durations, sub-agent execution log excerpt.
+* Extended telemetry: approved / ingested / failed source counts, ingestion and classification durations, classification execution log excerpt.
 
 **Options.**
 
@@ -355,7 +355,7 @@ This is directly distinguishable from Rule 5 (explicit absence), which emits `Pr
 
 ### Q-C-22 — Extended header with timestamps — acceptable?
 
-**Assumption.** Each deliverable carries an extended header: run ID, submission + completion timestamps, resolved car identity, resolved trim name, CSV version/hash, source counts, ingestion start/end, classification start/end, total elapsed time, sub-agent count.
+**Assumption.** Each deliverable carries an extended header: run ID, submission + completion timestamps, resolved car identity, resolved trim name, CSV version/hash, source counts, ingestion start/end, classification start/end, total elapsed time, classification partition count.
 
 **Options.**
 
@@ -467,13 +467,13 @@ For transparency, here is the list of decisions recorded in `11-assumptions.md` 
 
 * KB retention window in days (audit internals).
 * KB reuse across runs (internal; client-facing effect is latency only).
-* RAGFlow polling cadence and progress reporting (internal).
+* KB ingestion-status polling cadence and progress reporting (internal).
 * Download retry count and backoff schedule (internal).
 * Ingestion timeout value (internal; client-facing effect is dropped docs in footer).
 * Chunk-level citation granularity inside the KB (internal; `Source link` is URL-level).
-* Sub-agent partition heuristic and category-splitting thresholds (internal).
+* Parameter partition heuristic and category-splitting thresholds (internal).
 * Tool vendors and concrete platform bindings (ARCH-1 — platform-agnostic by design).
-* `.harness/` workspace layout (internal developer tooling).
+* Internal-workspace layout (internal developer tooling).
 * URL canonicalisation rules (internal; visible only as dedup behaviour).
 
 ***

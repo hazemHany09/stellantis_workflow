@@ -138,6 +138,64 @@ Status values in use: `Success`, `Conflict`, `Unable to Decide`.
 
 Rule 4 and Rule 5 produce distinct output triples. Rule 4 emits `(No Information Found, Unable to Decide, Empty)` with no traceability blocks. Rule 5 emits `(No, Success, Empty)` with at least one clear-source block. The two cases are directly distinguishable by `presence` and `status` without inspecting traceability.
 
+## Source-type categories and consensus
+
+Not every clear source is interchangeable. Each source document is assigned a **source-type** that describes the kind of claim it can authoritatively make. The deliverable distinguishes verdicts backed by **multiple independent source-types** from verdicts backed by a single category.
+
+### Source-type categories
+
+Each ingested document is assigned exactly one source-type. Two clear sources count as **independent** only when they belong to different categories.
+
+| Source-type                    | What it is                                                                  | Authority for                                                                      |
+| :----------------------------- | :-------------------------------------------------------------------------- | :--------------------------------------------------------------------------------- |
+| `manufacturer_official_spec`   | OEM build-and-price page, configurator, OEM brochure, OEM press kit.        | Trim availability, optional / standard split, package contents.                    |
+| `manufacturer_owner_manual`    | Owner's manual, user guide.                                                 | How a feature operates; rarely authoritative for trim-level availability.          |
+| `dealer_fleet_guide`           | Fleet-buyer guide, dealer order guide, salesperson reference.               | Standard / Optional matrix per trim — the canonical Standard / Optional / — grid.  |
+| `third_party_press_long_form`  | Long-form review (TheVerge, MotorTrend, Car and Driver, Top Gear, etc.).    | Operational behaviour, real-world performance claims.                              |
+| `third_party_aggregator`       | Edmunds, KBB, Cars.com feature lists.                                       | Trim availability matrices; cross-source for press claims.                         |
+| `manufacturer_video`           | OEM video walkthroughs.                                                     | How a feature operates; rarely trim-specific.                                      |
+| `forum_or_ugc`                 | Owner forums, community discussion threads, dealer forums.                  | Soft signal only; never sole authority.                                            |
+
+### Confidence annotation
+
+Every emitted record carries a `confidence` value, assigned deterministically alongside `(Presence, Status, Classification)`:
+
+| Rule           | Independent source-types backing the verdict                                                | `confidence`                  |
+| :------------- | :------------------------------------------------------------------------------------------ | :---------------------------- |
+| Rule 1 / Rule 5 | ≥ 2 distinct source-type categories all clear and aligned                                  | `consensus`                   |
+| Rule 1 / Rule 5 | exactly 1 distinct category (whether 1 source or many from the same category)              | `single-source`               |
+| Rule 2a / Rule 2b | mandatorily ≥ 2 clear-source blocks; same category on both sides                          | `single-source` (with advisory `same-source-type-conflict`) |
+| Rule 2a / Rule 2b | different categories on each side                                                          | `consensus`                   |
+| Rule 3         | vague-only evidence                                                                         | `vague-only`                  |
+| Rule 4         | silent-all (only after the inverse-retrieval test below)                                    | `silent-all`                  |
+
+Confidence is not a status. It does not change which row of the master matrix a record matches. It is a parallel signal so deliverable consumers can distinguish "two independent kinds of source agree" from "one kind said so".
+
+### Promotion and demotion
+
+* **Promotion.** If a parameter is emitted at `Rule 1, single-source` and a later evidence pass surfaces a clear corroborating source from a different category, the record is re-emitted at `Rule 1, consensus`.
+* **UGC demotion.** A Rule 1 or Rule 5 record whose only clear source is `forum_or_ugc` is invalid. The verdict is demoted to Rule 3 (`Yes, Unable to Decide, Empty`, `confidence = vague-only`). Forum claims alone never suffice for `Success`.
+
+## Inverse retrieval — prerequisite for Rule 4
+
+Standard searching is biased toward presence: looking for a feature surfaces documents that mention the feature, not documents that explicitly state it is unavailable. The result is that explicitly-absent features are routinely classified as Rule 4 (`No Information Found`) when they should have been classified as Rule 5 (`No, Success`). Rule 5 carries far more value to the consumer because it is a confirmed absence.
+
+Before a parameter can be **finalised at Rule 4**, an inverse-retrieval test must run. The test re-queries the same approved-and-ingested source set using the language of negation:
+
+* `"<feature_name>" "not available"`
+* `"<feature_name>" "deleted"`
+* `"<feature_name>" "no longer offered"`
+* `"<feature_name>" "<top_trim>" "exclusion"`
+* `"features not available on <top_trim>"`
+* `"<top_trim>" "deletes" OR "omits" OR "lacks"`
+
+Outcomes:
+
+* If the inverse pass surfaces any clear statement that the feature is absent on the resolved trim, the verdict is **promoted to Rule 5** (`No, Success, Empty`) with that statement as a clear-source traceability block (stance = absent).
+* If the inverse pass produces no negative evidence, the verdict stays at Rule 4. The record carries `inverse_retrieval_attempted = true` so the deliverable shows that absence-of-evidence was tested, not assumed.
+
+A Rule 4 record without `inverse_retrieval_attempted = true` is invalid.
+
 ## Invariants (for validators)
 
 1. Silent sources are never counted in Rule 1, Rule 2, Rule 3, or Rule 5.
@@ -148,4 +206,7 @@ Rule 4 and Rule 5 produce distinct output triples. Rule 4 emits `(No Information
 6. Every output record must map to exactly one row of the master decision matrix.
 7. **A parameter's** **`Classification`** **must belong to the parameter's Schema type** — the non-empty level columns in `artifacts/params.csv`. If the CSV leaves a level cell empty, that level is **not** a valid target for Classification, regardless of what any source describes. Evidence of an undefined tier triggers Rule 3 (`Unable to Decide`), never a nearest-level snap. This enforces the client's guidance: *unless a level is explicitly specified in* *`params.csv`, the parameter cannot be assigned that level.*
 8. `Disputed` is the only Presence value permitted under Rule 2b and cannot appear anywhere else.
+9. **Consensus.** Every Rule 1 / Rule 5 record carries `confidence ∈ {consensus, single-source}`. `consensus` requires ≥ 2 clear sources from **distinct** source-type categories.
+10. **No UGC-only Success.** A Rule 1 or Rule 5 record whose only clear-source traceability block is `source_type = forum_or_ugc` is invalid; the verdict is demoted to Rule 3.
+11. **Inverse retrieval before Rule 4.** Every Rule 4 record carries `inverse_retrieval_attempted = true`. A Rule 4 record without this flag is invalid.
 

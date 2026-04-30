@@ -17,6 +17,31 @@ Entry format:
 
 ***
 
+## 2026-04-30 — Source-type consensus, inverse retrieval, two-round R1/R2 architecture, and STATE.md enrichment
+
+**Intent.** Resync `business-logic/` and `framework-maintenance/` with the substantial skill-package changes landed since the foundational tier. Three domain additions (consensus / confidence, inverse retrieval, source-type taxonomy) were promoted into the decision rule contract; the orchestration layer was reshaped around a two-round flow (Round 1 broad search-mode + Round 2 doc-deep-dive); the download stage was refactored to a subagent-driven flow with block detection and retry modes; STATE.md gained a tiered (T1/T2) section catalogue. Documentation now reflects what the skills actually do.
+
+**Files changed.**
+
+* `business-logic/10-decision-rules.md` — added *Source-type categories and consensus* (seven categories, independence rule, confidence annotation table, promotion / UGC-demotion rules) and *Inverse retrieval — prerequisite for Rule 4* (query templates, Rule 4→Rule 5 promotion path, `inverse_retrieval_attempted` flag). Added invariants 9–11.
+* `business-logic/09-deliverable.md` — added `Confidence`, `Inverse retrieval attempted`, `Decision rule` to the per-parameter record table; added `Source type` and `Stance` to the traceability-block table.
+* `business-logic/06-harness-interface.md` — added `confidence`, `inverse_retrieval_attempted`, `decision_rule` to the harness output contract; added invariants 11–13 for confidence / inverse-retrieval / no-UGC-only-Success enforcement.
+* `framework-maintenance/README.md` — added `stellantis-subagent-doc-deep-dive` to the operational-skills table; clarified that orchestration is now a two-round R1/R2 flow.
+* `framework-maintenance/editing-rules.md` — rule 8 expanded: writer discipline now covers `DeepDiveAgent/`, `DownloadAgent/`, and adds a STATE.md-section-addition checklist (template + write trigger + T1/T2 marker + resumability check).
+* `framework-maintenance/impact-checklist.md` — new rows: `Add a Confidence value`, `Add a SourceType value`, `Change source-type consensus rules`, `Change inverse-retrieval contract`. New per-skill sections: `stellantis-lead-agent-subagent-orchestration` (R2 cap / partition / consolidator), `stellantis-subagent-doc-deep-dive` (contract + gap-input shape), `stellantis-source-download-and-ingest` (download-subagent contract / block detection / retry modes). `stellantis-run-workspace` row expanded for STATE.md sections and R1/R2 subagent file conventions. Path references retargeted from `runs/<run-id>/` to `.harness/`.
+
+**Business-logic IDs touched.** Decision-rule scope expanded for source-type / inverse retrieval / confidence — these are domain rules, not implementation. No business-logic ID was reopened; the additions slot into the existing Rule 1–5 structure as new invariants and a new annotation field.
+
+**Impact-checklist items applied.** Confidence enum row added. SourceType row added. Inverse-retrieval contract row added. Two-round R1/R2 sections registered for `stellantis-lead-agent-subagent-orchestration` and `stellantis-subagent-doc-deep-dive`. Download-subagent contract section registered for `stellantis-source-download-and-ingest`. STATE.md section-addition row registered for `stellantis-run-workspace`.
+
+**Migration notes.**
+
+* `business-logic/` deliberately does **not** document two-round R1/R2 orchestration, partition / concurrency ceilings, document-promise scoring, deep-dive subagents, STATE.md sections, RagFlow tool names, or Python CSV scripts. These are implementation concerns owned by the skill packages and `framework-maintenance/`. The business-logic surface stays domain-only — what the deliverable carries, how decisions are made, what evidence rules apply.
+* `business-logic/05-knowledge-base.md` and `12-workflow-diagram.md` still reference RagFlow primitives (`doc_infos`, `delete_docs`, `create_dataset`) and `.harness/` from earlier passes. These are not corrected here. A future cleanup pass should rephrase them in vendor-neutral / role-neutral language so the document set reads cleanly for a non-technical client reviewer.
+* The `automotive-feature-classification-skills/docs/` folder (untracked in git) holds design notes (`2026-04-30-state-md-enrichment-design.md` and the subagents/orchestration brainstorm). These are working artefacts, not part of either canonical layer; they should not be cited from `business-logic/` or referenced as authoritative by skill packages.
+
+***
+
 ## 2026-04-26 — Add foundational-skill tier (domain-context, decision-rules, output-contract, workflow-modes, failure-handling, kb-protocol, approval-gate, run-workspace)
 
 **Intent.** Promote cross-cutting concerns out of the operational sub-skills and into a tier of always-on foundational skills, so every agent role (lead and subagent) shares the same vocabulary, rule engine, output contract, retry policy, KB protocol, and workspace ownership rules. Eliminates drift between agents and centralises the high-value tips/pitfalls accumulated during design.

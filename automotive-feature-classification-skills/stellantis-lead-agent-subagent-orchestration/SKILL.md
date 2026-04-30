@@ -72,6 +72,8 @@ W1 stage 6 (and 6a, 6b). After ingestion verification has passed.
 
 ## Round 1 — search-mode partitioning
 
+The frozen `.harness/params.csv` is the authoritative source for which parameters to classify. It may contain all categories from the original reference sheet, or only a filtered subset if the client provided `requested_categories`. Do **not** assume a fixed number of parameters (e.g. 160) — use whatever the frozen CSV actually contains.
+
 1. Enumerate categories from the frozen CSV — the distinct non-empty values of `Domain / Category` rows that are **not** category banners or `Category Overview` rows.
 2. For each category, count parameters.
 3. If count ≤ 15, make one partition named `<category-slug>-1`.
@@ -120,6 +122,10 @@ For each Round-1 subagent that signals ready:
 
 After every Round-1 subagent has finished and consolidated:
 
+**Before spawning any Round-2 subagent, write the following to STATE.md:**
+1. Write the empty **Round 2 subagent roster** section (header + empty table). This must exist before the first R2 spawn.
+2. Write the **Gap parameters + R2 target assignments** JSON block (see below). This is write-once — never edit after this point.
+
 ### Identify gap parameters
 
 Walk every Round-1 record. Mark a parameter as a **gap parameter** when any of the following hold:
@@ -141,6 +147,8 @@ For each gap parameter, walk the document-promise board and select the highest-`
 When a gap parameter appears in `parameters_likely_to_be_evidenced[]` of zero documents, no deep-dive is spawned for it — Round 1's verdict stands. This is the right outcome: vector retrieval already saw nothing in the KB, and no Round-1 subagent thought any document was promising for it. Spending a deep-dive there would not help.
 
 ### Pre-create Round-2 contracts
+
+Write the **Gap parameters + R2 target assignments** JSON block into STATE.md now (if not already written above). The block must include all `gap_parameters[]`, all `r2_target_assignments[]`, any `gap_params_without_r2_target[]`, `r2_cap_reached`, and `generated_at`.
 
 For each (target_doc × gap_parameters) tuple, pre-create a working file at `.harness/DeepDiveAgent/<agent-name>.md`. Embed the deep-dive contract per `stellantis-subagent-doc-deep-dive`. The contract carries the `target_doc.local_path` (which must already exist in `.harness/downloads/`; if not, the lead calls `ragflow_download` once before spawning), the gap parameter list with their Round-1 verdicts, and the trim package map.
 
@@ -214,3 +222,17 @@ This single-round path is preserved as a reference for older runs; new runs foll
 * Every Rule 1 / Rule 5 record carries `confidence ∈ {consensus, single-source}`. The mix of consensus vs single-source is visible in the run summary.
 * `.harness/document-promise-board.md` exists and was used to drive the Round-2 doc selection. The chosen target documents are recorded with their promise rationale for audit.
 * Main STATE.md counts sum consistently across categories.
+
+## Final STATE.md update (mandatory)
+
+After all subagents are archived and all records consolidated (both rounds), the lead **must** write a final update to `.harness/STATE.md` before proceeding to deliverable emission:
+
+1. Set `RunStage = classification-complete`.
+2. **[T1] Summary counts** — final total parameters, breakdown by `Presence` value.
+3. **[T2] Confidence distribution** — final breakdown: consensus count, single-source count, Round 2 upgrades (single-source → consensus), Round 2 verdict changes (rule promoted), Rule 4 records remaining after Round 2.
+4. **[T2] Warnings and advisories summary** — final counts: run-level warnings, category-level warnings, Rule 2a conflicts, Rule 2b conflicts, undefined-tier advisories, out-of-list findings, R2 cap reached count.
+5. Record `classification_completed_at` timestamp in the Header.
+6. Set `completed_at` in Stage timing telemetry for `classification-round-2` (or `classification-round-1` if no R2 ran).
+7. Append event-log line: `"All subagents consolidated — N parameters classified (R1: N, R2 upgrades: N). Proceeding to deliverable emission."`.
+
+This step is **not optional**. Skipping it leaves STATE.md in a stale intermediate state and makes the run non-auditable. The lead must not proceed to Stage 7 (emit deliverable) until this update is written.
