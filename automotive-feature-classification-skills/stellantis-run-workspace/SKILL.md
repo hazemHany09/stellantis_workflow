@@ -40,22 +40,25 @@ Inline, on any read or write to `.harness/` or the project-root deliverables.
 │   ├── STATE.md                                      # comprehensive run state (lead-write; T1/T2 tiered)
 │   ├── params.csv                                    # frozen reference list snapshot
 │   ├── event-log.md                                  # append-only mirror of STATE.md event log
-│   ├── document-promise-board.md                     # R1 subagent promise scores aggregated by lead
-│   ├── partition-summaries.md                        # R1 partition summary per subagent
+│   ├── document-promise-board.md                     # aggregated R1 promise scores (lead-write from dispatch envelope)
+│   ├── partition-summaries.md                        # R1 partition summaries (lead-write from dispatch envelope)
 │   ├── downloads/                                    # PRE-UPLOAD STAGING AREA
 │   │   ├── <slug>.md                                 # downloaded & converted markdown
 │   │   ├── <slug>.pdf                                # downloaded PDF
 │   │   └── <slug>.<ext>                              # other document types
 │   ├── DownloadAgent/                                # download subagent working files (W1 stage 4)
 │   │   └── <slug>-dl.md                              # per-URL download subagent working file
+│   ├── DispatchAgent/                                # classification dispatch subagent (W1 stage 6)
+│   │   └── dispatch.md                               # lead seeds contract; dispatch subagent writes scratch + envelope
 │   ├── Category/
-│   │   └── <category>.md                             # consolidated per-category records (lead-write)
+│   │   └── <category>.md                             # consolidated per-category records (lead-write from dispatch envelope)
 │   ├── SubAgent/
-│   │   └── <agent-name>.md                           # active Round 1 classification subagent working file (subagent-write)
+│   │   └── <agent-name>.md                           # Round 1 classification subagent working file (dispatch subagent seeds; R1 subagent writes)
 │   ├── DeepDiveAgent/
-│   │   └── <agent-name>.md                           # active Round 2 deep-dive subagent working file (subagent-write)
+│   │   └── <agent-name>.md                           # Round 2 deep-dive subagent working file (dispatch subagent seeds; R2 subagent writes)
 │   ├── Archive/
-│   │   ├── <agent-name>.md                           # consolidated subagent files moved post-merge
+│   │   ├── dispatch.md                               # dispatch subagent working file moved post-consolidation
+│   │   ├── <agent-name>.md                           # R1/R2 subagent files moved after dispatch collects envelopes
 │   │   └── <slug>-dl.md                              # archived download subagent working files
 │   ├── advisories/                                   # internal-only artefacts
 │   │   ├── undefined-tier-evidence.md
@@ -84,19 +87,24 @@ Strict ownership prevents corruption when subagents run concurrently.
 
 | Path | Writer |
 | :--- | :--- |
-| `.harness/STATE.md` | **Lead only.** |
+| `.harness/STATE.md` | **Lead only.** Never written by dispatch or classification subagents. |
 | Deliverable files (project root) | **Lead only.** |
 | `.harness/params.csv` (frozen snapshot) | **Lead only**, written once at preflight. Never edited after. |
-| `.harness/downloads/*` | **Download subagents** — written by each subagent during W1 stage 4; preserved for audit. Never deleted after upload. |
+| `.harness/downloads/*` | **Download subagents** — written during W1 stage 4; preserved for audit. Never deleted after upload. |
 | `.harness/DownloadAgent/<slug>-dl.md` | **Lead** seeds the contract block at spawn; **named download subagent** writes scratch + result envelope. |
-| `.harness/Category/*.md` | **Lead only.** Updated during consolidation. |
-| `.harness/SubAgent/<agent-name>.md` | **Lead** seeds the contract block at spawn; **named classification subagent** writes everything after. |
-| `.harness/DeepDiveAgent/<agent-name>.md` | **Lead** seeds the contract block at spawn; **named deep-dive subagent** writes scratch + result envelope. |
-| `.harness/Archive/*.md` | **Lead only.** Files are moved here after consolidation (download, Round 1, and Round 2 subagents). |
-| `.harness/advisories/*` | **Classification subagents** for parameter-level advisories; **lead** for run-level advisories. |
+| `.harness/DispatchAgent/dispatch.md` | **Lead** seeds the `<!-- DISPATCH CONTRACT -->` block at spawn; **dispatch subagent** writes scratch + result envelope. |
+| `.harness/Category/*.md` | **Lead only.** Written during lead consolidation from the dispatch envelope. |
+| `.harness/document-promise-board.md` | **Lead only.** Written during lead consolidation from the dispatch envelope. |
+| `.harness/partition-summaries.md` | **Lead only.** Written during lead consolidation from the dispatch envelope. |
+| `.harness/SubAgent/<agent-name>.md` | **Dispatch subagent** seeds the contract block at spawn; **named R1 classification subagent** writes everything after. |
+| `.harness/DeepDiveAgent/<agent-name>.md` | **Dispatch subagent** seeds the contract block at spawn; **named R2 deep-dive subagent** writes scratch + result envelope. |
+| `.harness/Archive/*.md` | **Lead** moves dispatch working file post-consolidation; **dispatch subagent** moves R1/R2 working files after collecting their envelopes. |
+| `.harness/advisories/*` | **Classification subagents** stage advisories in their result envelopes (dispatch subagent forwards them); **lead** writes the final advisory files during consolidation. |
 | `.harness/source-*.md` | **Lead only.** |
 
-Subagents never touch any file outside their own `.harness/SubAgent/<agent-name>.md` and the advisory files they explicitly own.
+Classification subagents never touch any file outside their own `.harness/SubAgent/<agent-name>.md`.
+
+Dispatch subagent never touches `.harness/STATE.md` (write), `.harness/Category/*.md`, or any file outside its own `.harness/DispatchAgent/dispatch.md` — except seeding SubAgent/DeepDiveAgent contract files and moving R1/R2 working files to Archive after collecting envelopes.
 
 ## State files
 
@@ -143,12 +151,19 @@ Lifecycle:
 3. **Preserved** after upload for audit trail (not deleted).
 4. **Accessible** to user if they wish to verify markdown quality before ingestion.
 
-### `.harness/SubAgent/<agent-name>.md` (per subagent)
+### `.harness/DispatchAgent/dispatch.md` (dispatch subagent working file)
 
 Has three blocks, in order:
-1. **Contract header** (`<!-- AUTOGENERATED BY LEAD -->`) — seeded once by the lead at spawn; never re-edited.
-2. **Scratch** — the subagent's working notes during retrieval / decision iterations.
-3. **Result envelope** (`<!-- RESULT ENVELOPE -->`) — final output the lead consolidates.
+1. **Contract header** (`<!-- DISPATCH CONTRACT -->`) — seeded once by the lead at spawn; never re-edited.
+2. **Scratch** — the dispatch subagent's working notes (partition list, promise board aggregation, gap analysis, R2 target assignments, R1/R2 subagent roster).
+3. **Result envelope** (`<!-- DISPATCH RESULT ENVELOPE -->`) — final output the lead consolidates. Contains all category record groups, all staged metadata patches, document promise board, partition summaries, advisories, warnings, confidence distribution.
+
+### `.harness/SubAgent/<agent-name>.md` (R1 classification subagent working file)
+
+Has three blocks, in order:
+1. **Contract header** (`<!-- AUTOGENERATED BY LEAD -->`) — seeded once by the **dispatch subagent** at spawn; never re-edited.
+2. **Scratch** — the R1 subagent's working notes during retrieval / decision iterations.
+3. **Result envelope** (`<!-- RESULT ENVELOPE -->`) — final output the dispatch subagent consolidates internally.
 
 ### `.harness/Category/<category>.md` (per category)
 
@@ -175,10 +190,12 @@ If the user's reply is insufficient (e.g. still ambiguous), re-prompt — never 
 
 ## Concurrency rules
 
-- **Multiple subagents may run concurrently.** Up to 3 (enforced by `stellantis-lead-agent-subagent-orchestration`).
-- **Each subagent writes only its own working file.** No file is shared as a write target.
-- **Consolidation is serial.** Even if two subagents finish at the same time, the lead consolidates them one after another.
-- **Multiple concurrent car analyses each have their own `.harness/`.** No cross-run coordination. (To support this, car identity must be part of the analysis context, or separate projects must be used.)
+- **The lead spawns ONE dispatch subagent.** The lead does not directly spawn R1/R2 classification subagents.
+- **The dispatch subagent manages R1/R2 concurrency.** Up to 3 classification subagents running concurrently within the dispatch subagent (enforced by `stellantis-lead-agent-subagent-orchestration`).
+- **Each subagent writes only its own working file.** No file is shared as a write target between concurrent subagents.
+- **Dispatch internal consolidation is serial.** Even if two R1/R2 subagents finish at the same time, the dispatch subagent consolidates them one after another.
+- **Lead consolidation runs once, after the dispatch subagent signals ready.** The lead does not do partial consolidations.
+- **Multiple concurrent car analyses each have their own `.harness/`.** No cross-run coordination.
 
 ## Resumability checklist
 
@@ -186,21 +203,23 @@ For a run to be safely resumable from a clean restart:
 - `.harness/STATE.md` must always reflect the latest committed state (atomic-ish writes).
 - All [T1] sections must be flushed before any `RunStatus = paused` or `RunStage` change.
 - The frozen `.harness/params.csv` must remain unchanged for the entire run, including all gap-fill cycles.
-- Subagent working files must be self-describing — the contract block alone is enough to re-spawn.
+- `.harness/DispatchAgent/dispatch.md` must be self-describing — the contract block alone is enough to re-spawn the dispatch subagent.
+- R1/R2 classification subagent working files must be self-describing — the contract block alone is enough to re-spawn.
 - The `.harness/sources_excluded.md` log must be append-only.
 - Downloaded files in `.harness/downloads/` are preserved and referenced in STATE.md.
-- The Round 2 subagent roster section must exist (even empty) before the first R2 subagent spawns.
-- The gap parameters + R2 target assignments JSON block must be written before any R2 subagent spawns.
+- The dispatch subagent records the R2 subagent roster and gap-parameters JSON block in its scratch before spawning any R2 subagent.
 - Per-doc ingestion status rows are written at upload, not at ingestion trigger — post-crash agent can see which doc_ids exist without calling `doc_infos`.
 
 ## Tips & common pitfalls
 
-- **Create .harness FIRST.** Before any other processing in preflight, create the `.harness/` folder structure.
+- **Create .harness FIRST.** Before any other processing in preflight, create the `.harness/` folder structure. Including `DispatchAgent/`.
 - **Save to downloads/ before uploading.** Every downloaded file goes to `.harness/downloads/` first, then upload references it there.
-- **Don't write the deliverable until consolidation is complete for every partition.** The deliverable is the final commit.
-- **Don't move subagent files out of `SubAgent/` before consolidation finishes.** Archive comes after merge, not before.
+- **Don't write the deliverable until lead consolidation is complete.** Lead consolidation happens once, after the dispatch subagent signals ready.
+- **Don't let the lead spawn R1/R2 subagents directly.** The lead spawns ONE dispatch subagent; that subagent handles all R1/R2 spawning.
+- **Don't let the dispatch subagent write STATE.md or Category files.** It collects everything in its own envelope; the lead writes all other files.
+- **Don't move R1/R2 subagent files out of `SubAgent/`/`DeepDiveAgent/` before the dispatch subagent collects their envelopes.** Archive comes after the dispatch subagent records the envelope contents.
 - **Don't put internal artefacts into the root.** The root has only deliverables; `.harness/` contains working files.
-- **Don't write to another agent's working file.** Even the lead does not edit a subagent's scratch — it reads and consolidates.
+- **Don't write to another agent's working file.** Lead seeds dispatch contract; dispatch subagent seeds R1/R2 contracts; neither edits the other's scratch.
 - **Don't edit the frozen reference list mid-run.** A new reference list applies to the next run only.
 - **Don't rely on memory across pauses.** Read state from `.harness/STATE.md` on every resume.
 - **Don't delete `.harness/downloads/` after upload.** Preserve for audit trail.
