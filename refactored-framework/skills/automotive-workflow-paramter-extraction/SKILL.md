@@ -1,6 +1,6 @@
 ---
-name: automotive-workflow-paramter-extraction
-description: this skill is invoked by the lead agent to have a multi stages workflow for the pipeline used by the clients to extract paramters. this is the only skill you need to invoke to orchasterate the parameter extraction and classifications
+name: automotive-workflow-parameter-extraction
+description: this skill is invoked by the lead agent to have a multi stages workflow for the pipeline used by the clients to extract parameters. this is the only skill you need to invoke to orchasterate the parameter extraction and classifications
 ---
 
 # Automotive Feature Classification — Workflow
@@ -9,7 +9,7 @@ description: this skill is invoked by the lead agent to have a multi stages work
 
 **What this is:** You are automating a manual research task performed by an automotive analyst. For one car — identified by `(brand, model, model_year, market)` — you classify feature parameters against the manufacturer's full-option trim. For each parameter you answer: is the feature present, and if so, at which implementation level (Basic / Medium / High)?
 
-**Parameters and categories:** Parameters are grouped into functional categories (e.g. ADAS, Infotainment, Comfort, EV, Safety). Each parameter has up to three classification levels; the criteria for each level are defined in the reference list (params.csv). Levels are cumulative — High implies Medium implies Basic. the params.csv is in the same directory as this skill under the name of 'automotive-workflow-paramter-extraction-skill'
+**Parameters and categories:** Parameters are grouped into functional categories (e.g. ADAS, Infotainment, Comfort, EV, Safety). Each parameter has up to three classification levels; the criteria for each level are defined in the reference list (params.csv). Levels are cumulative — High implies Medium implies Basic. the params.csv is in the same directory as this skill under the name of 'automotive-workflow-parameter-extraction-skill'
 
 **Evidence Source Types — canonical `source_type` values:**
 

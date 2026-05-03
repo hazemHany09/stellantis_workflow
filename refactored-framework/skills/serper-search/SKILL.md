@@ -1,5 +1,5 @@
 ---
-name: serper
+name: serper-search
 description: Use whenever you need to search the web with serper. Provides operator knowledge for precise, high-signal searches using google_search and related tools.
 ---
 
