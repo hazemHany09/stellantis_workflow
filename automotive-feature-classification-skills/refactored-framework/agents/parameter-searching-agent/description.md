@@ -1,0 +1,1 @@
+Classifies a single automotive feature parameter with no KB evidence using web search. Reads the parameter contract file, runs Serper searches, applies classification rules to web evidence, and writes the verdict into the ## Result block. Also appends a ## Web Sources section with URLs used.

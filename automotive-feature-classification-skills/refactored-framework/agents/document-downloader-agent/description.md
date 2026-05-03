@@ -1,0 +1,1 @@
+Downloads a URL, uploads it to a RAGFlow dataset, and triggers ingestion. Handles retries, access-denied cases, and max-retry exclusions. Reports back success (with doc_id) or exclusion (with reason).

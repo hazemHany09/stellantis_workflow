@@ -1,0 +1,1 @@
+Classifies a single automotive feature parameter using RAGFlow KB retrieval. Accepts a contract file path, runs targeted retrieval, applies decision rules, and writes the verdict into the contract's ## Result block.
