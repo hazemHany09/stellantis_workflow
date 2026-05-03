@@ -2,7 +2,12 @@
   "permissions": {
     "allow": [
       "Bash(cat)",
-      "Read(//tmp/**)"
+      "Read(//tmp/**)",
+      "Bash(Get-ChildItem -Path \"C:\\\\computer\\\\programming\\\\infomineo\\\\custom_skills\\\\automotive-feature-classification-skills\" -Directory)",
+      "Bash(Select-Object Name)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "PowerShell(Get-ChildItem -Recurse \"C:\\\\computer\\\\programming\\\\infomineo\\\\custom_skills\\\\automotive-feature-classification-skills\\\\refactored-framework\" | Where-Object { !$_.PSIsContainer } | Select-Object FullName)"
     ]
   }
 }

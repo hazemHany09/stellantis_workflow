@@ -2,7 +2,7 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$id": "deliverable.schema.json",
     "title": "Automotive Feature Classification — Deliverable",
-    "description": "Schema of runs/<run-id>/deliverable.json. Primary deliverable. Record order = params.csv row order. Exactly one record per parameter in the CSV.",
+    "description": "Schema of /mnt/user-data/outputs/<brand>-<model>-<year>-<market>-<run-id>.json. Primary deliverable. Record order = params.csv row order. Exactly one record per parameter in the CSV.",
     "type": "object",
     "required": [
         "header",

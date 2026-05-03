@@ -37,12 +37,13 @@ Only **W1** has a full workflow document at the time of writing. The slots for a
 
 ### W1 — Normal pipeline (Mode A or Mode B)
 
-The single end-to-end workflow currently authored. Covers the full path: parse → resolve trim → freeze reference list → discover sources (Mode A if user supplied URLs/domains; Mode B if not) → validate candidates → approval gate → download + ingest → spawn subagents by category → consolidate → emit deliverable.
+The single end-to-end workflow currently authored. Covers the full path: parse → resolve trim → freeze reference list → discover sources (Mode A if user supplied URLs/domains; Mode B if not) → validate candidates → **approval gate (pause for URL approval)** → download + ingest → **classification go-ahead gate (pause after ingestion verified, before any classification subagent is spawned — user must reply `go`)** → spawn subagents by category → consolidate → emit deliverable.
 
 | Slot | Value |
 | :--- | :--- |
 | Trigger | User submits a request naming a specific car. |
 | Approval gate | **Yes**. URL-level approval required before ingestion. |
+| Classification go-ahead gate | **Yes**. After ingestion is verified, the lead pauses with `PauseReason = awaiting-classification-go-ahead`, posts the ingestion + planned-partition summary, and waits for the user's explicit `go` before spawning any R1 classification subagent. |
 | Scope | Full car, every parameter in the frozen reference list. |
 | KB | New dataset per run. |
 | Run ID | New per run. |

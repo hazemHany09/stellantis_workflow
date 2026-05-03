@@ -5,9 +5,11 @@ description: How the lead agent creates parameter contract files and spawns suba
 
 # Task Contracts — Lead Agent Protocol
 
+> **Scope:** This skill is loaded exclusively by the lead agent. Subagents (including the general-purpose contract-writer) never load this skill. The lead agent copies the template from this file and embeds it verbatim in the prompt it sends to the general-purpose agent.
+
 ## Contract File
 
-Each parameter gets one contract file in `classification-tasks/`. The lead writes the full file at stage 4 (before spawning). When spawning, the lead **injects the `## Task` section** into the file first, then calls `task_tool`.
+Each parameter gets one contract file in `classification-tasks/`. The lead agent reads the template below, passes it to the general-purpose agent to create the files, then **injects the `## Task` section** into each file before spawning a classifier or searcher agent.
 
 ### File naming
 ```
@@ -66,8 +68,25 @@ Do not output anything outside the `## Result` block. The lead reads the file, n
   "confidence": "",
   "decision_rule": "",
   "evidence_summary": "",
-  "sources": [],
-  "inverse_retrieval_attempted": false
+  "sources": [
+    {
+      "url": "",
+      "source_type": "",
+      "kind": "",
+      "stance": "",
+      "note": ""
+    }
+  ],
+  "inverse_retrieval_attempted": false,
+  "traceability": [
+    {
+      "chunk_id": "",
+      "doc_id": "",
+      "source_type": "",
+      "quote": "",
+      "kind": ""
+    }
+  ]
 }
 ```
 ```
@@ -90,24 +109,7 @@ task_tool(
 - The `prompt` must include the absolute path to the contract file
 - The agent reads the file — do not duplicate contract content in the prompt
 - For `parameter-searching-agent`: same protocol, `subagent_type="parameter-searching-agent"`, no dataset_id needed in ## Task
-- For `document-downloader-agent`: prompt includes URL + dataset_id directly (no contract file)
-
----
-
-## Batch Spawning Protocol
-
-Maximum **10 agents per batch**. Do not spawn the next batch until the current batch completes.
-
-```python
-# Spawn batch (max 10)
-batch = parameters[offset:offset+10]
-for param in batch:
-    # inject ## Task into contract file
-    # call task_tool
-# Wait for batch to complete before next batch
-```
-
-After each batch: scan completed contract files for results before spawning next batch.
+- For `document-downloader-agent`: prompt includes URL + dataset_id + source_type directly (no contract file)
 
 ---
 
@@ -131,7 +133,7 @@ After classifier batch completes, scan all contract files:
 no_info = [f for f in contracts if result["presence"] == "No Information Found"]
 ```
 
-These are handed to `parameter-searching-agent` in the next batch. The same contract file is reused — the searching agent overwrites the `## Result` block with web-search-based findings.
+These are handed to `parameter-searching-agent`. The same contract file is reused — the searching agent overwrites the `## Result` block with web-search-based findings.
 
 ---
 

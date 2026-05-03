@@ -50,9 +50,10 @@ This skill orchestrates two layers of sub-skills, loaded lazily at the workflow 
 | `stellantis-source-discovery-without-client-domains` | W1-stage-3-modeB | Lead solo | Open-web search (Mode B) |
 | `stellantis-source-validation` | W1-stage-3b | Lead solo | Validate & filter candidate source list |
 | `stellantis-approval-gate` | W1-stage-3c | Lead solo | Flag URLs, yield, resume on explicit signal |
-| `stellantis-source-download-and-ingest` | W1-stage-4, W1-stage-5 | Lead + download subagents | Download URLs, upload to KB, wait for ingestion |
-| `stellantis-lead-agent-subagent-orchestration` | W1-stage-6 | Lead + Dispatch Subagent | Lead spawns ONE dispatch subagent; dispatch subagent reads params.csv + STATE.md, partitions, spawns R1/R2; lead consolidates returned envelope |
-| `stellantis-subagent-classification-loop` | W1-stage-6a | Classification Subagent | Classify parameters using KB retrieval |
+| `stellantis-source-download-and-ingest` | W1-stage-4, W1-stage-5 | Lead + download/ingest subagents | Lead spawns one download+ingest subagent per approved URL; subagents fetch + upload (content-blind, size-only feedback) |
+| `stellantis-lead-agent-subagent-orchestration` | W1-stage-6 | Lead | Lead reads `params.csv`, partitions by category (≤ 15 params, single-category), spawns R1 classification subagents directly, consolidates, then spawns R2 deep-dive subagents directly. No dispatch layer. |
+| `stellantis-subagent-classification-loop` | W1-stage-6a | R1 Classification Subagent | Classify parameters from contract slice using KB retrieval |
+| `stellantis-subagent-doc-deep-dive` | W1-stage-6b | R2 Deep-Dive Subagent | Read a single local Markdown to resolve gap parameters |
 
 **Key reference:** See `REFERENCES.md` for template and schema IDs (`state-main-template`, `enums-reference`, etc.).
 
@@ -79,26 +80,28 @@ If any of the four required fields — brand, model, model year, market — cann
 
 ## Core Pattern: Lead Agent Lifecycle
 
-### Lead Spawning Constraint (Hard Rule)
+### Lead is the sole spawner (Hard Rule)
 
-The lead agent runs **solo** from preflight through ingestion completion. It does **not** spawn any classification-related subagents until:
+The lead agent is the **only actor** that may spawn subagents at any stage. No subagent at any stage may spawn another subagent. The lead spawns subagents in two distinct stages:
 
-1. The `.harness/` structure is fully created and initialised
-2. Sources have been approved by the user (approval gate closed)
-3. All approved sources are ingested and ingestion verified (stage 5 complete)
+1. **W1 stage 4 — download + ingest subagents.** One per approved URL. Each fetches its URL via `fetch_url` (or, in retry mode, `fetch_webpage`) and uploads via `ragflow_upload`. Subagents are **content-blind**: they never open, read, or scan the file they downloaded — they report only the byte size of the saved file to the lead, and the lead does all block-type classification.
+2. **W1 stage 6 — classification subagents.** The lead reads `.harness/params.csv` directly, partitions parameters **by category, max 15 parameters per subagent, never crossing categories**, and embeds the exact parameter slice in each subagent's contract. Subagents at stage 6 never read `params.csv`. Round 1 uses KB retrieval (`stellantis-subagent-classification-loop`); Round 2 uses local Markdown reads on a single file (`stellantis-subagent-doc-deep-dive`).
 
-The only permitted subagent spawn before this point is the **trim-resolution search** at stage 1b — a single-purpose web-search agent that returns `resolved_trim` and `trim_package_map`. This is the sole exception.
+Before stage 4 the lead runs **solo** — source discovery, validation, approval gate, and `.harness/` initialisation are all lead-only. The only permitted subagent spawn before stage 4 is the **trim-resolution search** at stage 1b, a single-purpose web-search agent that returns `resolved_trim` and `trim_package_map`.
 
-After stage 5 completes, the lead spawns exactly **ONE classification dispatch subagent**. The dispatch subagent reads `params.csv` and `STATE.md`, partitions all parameters, spawns and monitors R1/R2 classification subagents, and returns a consolidated envelope. The lead never directly spawns R1/R2 classification agents — that is the dispatch subagent's job.
+### Lead-only spawning constraint
+
+No subagent of any kind — download, ingest, R1 classification, R2 deep-dive, trim search — spawns another subagent. This is enforced. Any apparent need for nested spawning is satisfied by the lead doing the spawn itself after consolidating the relevant envelope.
 
 ### Preflight
 
 Executed exactly once per run, before loading any workflow or sub-skill:
 
 1. **Create .harness folder structure IMMEDIATELY.** Before any other processing:
-   - Create `.harness/` folder at project root
-   - Create subdirectories: `downloads/`, `Category/`, `SubAgent/`, `Archive/`, `advisories/`
-   - All agent-internal work lives here; no nesting under `runs/<run-id>/`
+   - The agent runs inside a fixed three-path sandbox: `/mnt/user-data/workspace/` (read+write), `/mnt/user-data/outputs/` (read+write, deliverables only), `/mnt/user-data/uploads/` (read-only inputs). See `stellantis-run-workspace` for the full contract.
+   - Create `/mnt/user-data/workspace/.harness/`. **All agent-internal run state lives under this folder — nothing else is written to the workspace root.**
+   - Create subdirectories: `downloads/`, `Category/`, `SubAgent/`, `DeepDiveAgent/`, `DownloadAgent/`, `Archive/`, `advisories/`, `scripts/`.
+   - No `runs/<run-id>/` nesting. One workspace = one run.
 2. **Load foundational skills.** `stellantis-domain-context`, `stellantis-decision-rules`, `stellantis-output-contract`, `stellantis-workflow-modes`, `stellantis-failure-handling`, `stellantis-knowledge-base-protocol`, `stellantis-run-workspace`. These stay in context for the rest of the run.
 3. **Parse request and resolve 4 required fields.** Brand, model, model_year, market. Do not default any.
 4. **Identify workflow.** Use `stellantis-workflow-modes` to classify the request. Default to W1; pick Mode A if the user supplied URLs or domains, otherwise Mode B.
@@ -111,52 +114,66 @@ Executed exactly once per run, before loading any workflow or sub-skill:
    - Event log (first entry: "Preflight complete, .harness created")
 7. **Resolve trim** — Call `stellantis-car-trim-resolution` sub-skill, record result in STATE.md.
 8. **Create KB dataset** per `stellantis-knowledge-base-protocol`. Record dataset_id in STATE.md.
-9. **Freeze the reference list:** copy `artifacts/params.csv` → `.harness/params.csv`, record hash in STATE.md.
+9. **Freeze the reference list:** copy `/mnt/user-data/uploads/params.csv` (if the user supplied one; otherwise the bundled reference list located at `stellantis-automotive-feature-classification/assets/params.csv` inside the skill repository — read it with `read_file` using its absolute path) → `/mnt/user-data/workspace/.harness/params.csv`, record sha256 hash to `.harness/params.csv.hash` and in STATE.md.
+   - `/mnt/user-data/uploads/` is **read-only** — never written back.
    - If `requested_categories` is non-empty, filter `.harness/params.csv` to rows whose `Domain / Category` value matches one of the requested category names (case-insensitive). Write the filtered result back to `.harness/params.csv`. Record both the full-list hash and the filtered-list hash in STATE.md, and note which categories were requested.
    - If `requested_categories` is empty, all categories from the CSV are in scope. Do **not** assume a fixed count such as 160 — the actual number is whatever the frozen CSV contains after any filtering.
 10. **Update STATE.md** event log: "Preflight complete, ready for source discovery."
 
 ### Roles & Responsibilities
 
-The lead is a **pure orchestrator**. It acquires sources, manages the KB, and consolidates classification results. It does **not** classify parameters itself and does **not** partition or dispatch classification work — those belong to the dispatch subagent.
+The lead is a **pure orchestrator AND the sole spawner**. It acquires sources, manages the KB, partitions `params.csv`, spawns every subagent (download + R1 + R2), and consolidates classification results. It does **not** classify parameters itself. Subagents do narrow, well-scoped work and never spawn anything.
 
-The dispatch subagent is a **classification dispatcher**. It reads `params.csv` and `STATE.md`, creates partitions, spawns and monitors R1/R2 classification subagents, and returns a consolidated envelope to the lead. It does **not** touch STATE.md or any `.harness/Category/` file.
+The download + ingest subagent is a **content-blind I/O worker**. It calls `fetch_url` (or `fetch_webpage` in retry mode) and `ragflow_upload`, captures the saved file's byte size, and writes a result envelope. It never reads the file's contents and never reads `params.csv`, `STATE.md`, or any other subagent's working file.
 
-The classification subagent is a **pure worker**. It retrieves evidence from the KB, applies decision rules, and writes records into its working file. It does **not** discover sources, upload documents, spawn other agents, or touch any file outside its own working file.
+The R1 classification subagent is a **pure KB-retrieval worker**. It reads its contract (which contains the full parameter slice for its single category), retrieves evidence from the KB, applies decision rules, and writes records into its working file. It never discovers sources, never uploads documents, never spawns other agents, and never touches files outside its own working file. It does **not** read `params.csv`.
 
-When in doubt about who does something: web/KB dataset/STATE.md writes → lead. Partitioning/R1/R2 spawning → dispatch subagent. KB retrieval for classification → classification subagent.
+The R2 deep-dive subagent is a **single-file reader**. It reads exactly one Markdown file from `.harness/downloads/` (the one named in its contract), applies the decision rules, and writes records. It performs no KB retrieval, no web search, no spawning, no `params.csv` access.
 
-| Concern | Lead | Dispatch Subagent | Classification Subagent |
-| :--- | :--- | :--- | :--- |
-| Parse request; resolve 4 required fields | ✅ | — | — |
-| Resolve car identity + full-option trim | ✅ (may spawn search agent) | — | — |
-| Create + manage KB dataset | ✅ | — | — |
-| Create `.harness/` folder structure | ✅ | — | — |
-| Source discovery (web search) + validation | ✅ | — | — |
-| Post candidate URL list; interpret approval reply | ✅ | — | — |
-| Download sources → `.harness/downloads/` | ✅ (via download subagents) | — | — |
-| Upload to KB; run ingestion; deduplicate docs | ✅ | — | — |
-| Spawn ONE classification dispatch subagent (stage 6) | ✅ | — | — |
-| Read `params.csv`; partition parameters | — | ✅ | — |
-| Pre-seed R1 SubAgent working files; spawn R1 subagents | — | ✅ | — |
-| Monitor R1 progress; detect timeouts; re-spawn on failure | — | ✅ | — |
-| Identify gap parameters; build promise board; select R2 targets | — | ✅ | — |
-| Pre-seed R2 DeepDiveAgent working files; spawn R2 subagents | — | ✅ | — |
-| Monitor R2 progress; merge R1+R2 records; build dispatch envelope | — | ✅ | — |
-| KB retrieval per parameter; read chunks; apply decision rules | — | — | ✅ |
-| Stage metadata patches in result envelope | — | — | ✅ |
-| Consolidate dispatch envelope → write `.harness/Category/*.md` | ✅ | — | — |
-| Apply metadata patches via `batch_update_doc_metadata` | ✅ | — | — |
-| Promote warnings; write advisories | ✅ | — | ✅ (in envelope) |
-| Archive subagent working files | ✅ (dispatch + classification) | ✅ (R1/R2 after collection) | — |
-| Write final STATE.md update | ✅ | — | — |
-| Emit `deliverable.json` + `deliverable.csv` | ✅ | — | — |
+When in doubt about who does something: spawning, web/KB dataset/STATE.md writes, partitioning of `params.csv` → lead. KB retrieval for classification → R1 subagent. Single-doc deep read → R2 subagent. Network fetch + upload → download/ingest subagent.
 
-**Hard rule:** Classification subagents **never** use open-web search, browser rendering, `fetch_url`, or `fetch_webpage`. Their only tools are the knowledge-base retrieval/inspection set — `retrieval`, `retrieve_knowledge_graph`, `list_chunks`, `ragflow_download`, `doc_infos`, `get_metadata_summary`.
+| Concern | Lead | Download/Ingest Subagent | R1 Classification Subagent | R2 Deep-Dive Subagent |
+| :--- | :--- | :--- | :--- | :--- |
+| Parse request; resolve 4 required fields | ✅ | — | — | — |
+| Resolve car identity + full-option trim | ✅ (may spawn search agent) | — | — | — |
+| Create + manage KB dataset | ✅ | — | — | — |
+| Create `.harness/` folder structure | ✅ | — | — | — |
+| Source discovery (web search) + validation | ✅ | — | — | — |
+| Post candidate URL list; interpret approval reply | ✅ | — | — | — |
+| Spawn one download/ingest subagent per approved URL | ✅ | — | — | — |
+| `fetch_url` / `fetch_webpage` + `ragflow_upload` | — | ✅ | — | — |
+| Capture saved file size; report to lead | — | ✅ | — | — |
+| Read content of downloaded file | ❌ | ❌ | ❌ | ✅ (own contract's `target_doc.local_path` only) |
+| Lead-side `block_type` classification (size-driven) | ✅ | — | — | — |
+| Run ingestion; deduplicate docs | ✅ | — | — | — |
+| Read `.harness/params.csv` | ✅ | ❌ | ❌ | ❌ |
+| Partition params.csv by category (≤ 15 / partition, single-category) | ✅ | — | — | — |
+| Pre-seed R1 SubAgent working files; embed contract with parameter slice | ✅ | — | — | — |
+| Spawn R1 classification subagents | ✅ | — | — | — |
+| Spawn ANY subagent (download / R1 / R2 / trim) | ✅ | ❌ | ❌ | ❌ |
+| Monitor R1 progress; detect timeouts; re-spawn on failure | ✅ | — | — | — |
+| Identify gap parameters; build promise board; select R2 targets | ✅ | — | — | — |
+| Pre-seed R2 DeepDiveAgent working files; spawn R2 subagents | ✅ | — | — | — |
+| Monitor R2 progress; merge R1+R2 records | ✅ | — | — | — |
+| KB retrieval per parameter; read chunks; apply decision rules | — | — | ✅ | — |
+| Read a single local Markdown end-to-end and apply decision rules | — | — | — | ✅ |
+| Stage metadata patches in result envelope | — | — | ✅ | ✅ |
+| Consolidate envelopes → write `.harness/Category/*.md` | ✅ | — | — | — |
+| Apply metadata patches via `batch_update_doc_metadata` | ✅ | — | — | — |
+| Promote warnings; write advisories | ✅ | — | ✅ (in envelope) | ✅ (in envelope) |
+| Archive subagent working files | ✅ | — | — | — |
+| Write final STATE.md update | ✅ | — | — | — |
+| Emit `deliverable.json` + `deliverable.csv` | ✅ | — | — | — |
 
-**Hard rule:** The dispatch subagent **never** writes to `.harness/STATE.md` or `.harness/Category/*.md`. It writes only to its own `.harness/DispatchAgent/dispatch.md` working file (and seeds SubAgent / DeepDiveAgent contract files).
+**Hard rule:** Classification subagents (R1) **never** use open-web search, browser rendering, `fetch_url`, `fetch_webpage`, or `read_file` against `.harness/downloads/`. Their only tools are the knowledge-base retrieval/inspection set — `retrieval`, `retrieve_knowledge_graph`, `list_chunks`, `ragflow_download`, `doc_infos`, `get_metadata_summary`. R2 deep-dive subagents use **only** `read_file` against the single `target_doc.local_path` in their contract.
 
-**Concurrency:** maximum **3 subagents running concurrently** (enforced by `lead-agent-subagent-orchestration` skill).
+**Hard rule:** Download/ingest subagents **never** read the file they downloaded. They observe only its byte size from the `fetch_url` return value or `os.stat` and report that to the lead.
+
+**Hard rule:** No subagent of any kind reads `.harness/params.csv`, `.harness/STATE.md`, `.harness/Category/*.md`, or another subagent's working file. The lead is the sole reader/writer of those files.
+
+**Hard rule:** No subagent spawns another subagent. Any nested-spawn pattern must be refactored into the lead spawning the second subagent itself after consolidating the first's envelope.
+
+**Concurrency:** maximum **3 classification subagents running concurrently** (R1 or R2, enforced by `lead-agent-subagent-orchestration` skill). Download/ingest subagents have their own concurrency cap (max 5 concurrent) per `stellantis-source-download-and-ingest`.
 
 ## Quick Reference
 
@@ -169,27 +186,27 @@ The framework uses a **hybrid** state layout. All files live under `.harness/`, 
 
 **Agent-internal (`.harness/`):**
 - `.harness/downloads/` — Pre-upload markdown & binary files (staging area before KB ingest)
+- `.harness/DownloadAgent/<slug>-dl.md` — download/ingest subagent working files (lead seeds contract; subagent writes scratch + content-blind result envelope)
 - `.harness/document-promise-board.md` — R1 document promise scores aggregated across partitions; drives R2 target selection
 - `.harness/partition-summaries.md` — per-partition summary from each R1 subagent
 - `.harness/Category/<category>.md` (lead-write only) — consolidated per-parameter records, assigned subagents, category warnings
-- `.harness/DispatchAgent/dispatch.md` (lead seeds contract; dispatch subagent writes scratch + envelope) — classification dispatch subagent working file
-- `.harness/SubAgent/<agent-name>.md` (dispatch subagent seeds contract; R1 subagent writes) — Round 1 classification subagent working file
-- `.harness/DeepDiveAgent/<agent-name>.md` (dispatch subagent seeds contract; R2 subagent writes) — Round 2 deep-dive subagent working file
-- `.harness/Archive/<agent-name>.md` — consolidated files moved after merge (dispatch + R1 + R2)
+- `.harness/SubAgent/<agent-name>.md` (lead seeds contract; R1 subagent writes) — Round 1 classification subagent working file
+- `.harness/DeepDiveAgent/<agent-name>.md` (lead seeds contract; R2 subagent writes) — Round 2 deep-dive subagent working file
+- `.harness/Archive/<agent-name>.md` — consolidated files moved after merge (download + R1 + R2)
 - `.harness/advisories/` — undefined-tier advisories + out-of-list findings (internal only)
-- `.harness/params.csv` — frozen reference snapshot
+- `.harness/params.csv` — frozen reference snapshot (lead-only reader during classification)
 - `.harness/source-candidates.md` — validated candidate list before approval
 - `.harness/source-approved.md` — parsed approved URL set
 - `.harness/sources_excluded.md` — download/ingestion drops
 
-**Deliverables (at project root, alongside .harness/):**
-- `<brand>-<model>-<year>-<market>-<run-id>.json` — Primary deliverable (full traceability)
-- `<brand>-<model>-<year>-<market>-<run-id>.csv` — Secondary deliverable (flattened)
+**Deliverables (in `/mnt/user-data/outputs/` — separate path, not the workspace):**
+- `/mnt/user-data/outputs/<brand>-<model>-<year>-<market>-<run-id>.json` — Primary deliverable (full traceability)
+- `/mnt/user-data/outputs/<brand>-<model>-<year>-<market>-<run-id>.csv` — Secondary deliverable (flattened)
 
 **Writer discipline:**
-- Lead writes `.harness/STATE.md`, `.harness/Category/*.md`, seeds `.harness/DispatchAgent/dispatch.md` contract.
-- Dispatch subagent writes `.harness/DispatchAgent/dispatch.md` (scratch + envelope), seeds `.harness/SubAgent/<agent-name>.md` and `.harness/DeepDiveAgent/<agent-name>.md` contracts.
-- R1/R2 classification subagents write only their own working file.
+- Lead writes `.harness/STATE.md`, `.harness/Category/*.md`, `.harness/document-promise-board.md`, `.harness/partition-summaries.md`, advisories, and seeds every subagent's contract block.
+- Download/ingest subagents write only `.harness/DownloadAgent/<slug>-dl.md` (scratch + result envelope) and the file they fetch in `.harness/downloads/`.
+- R1 / R2 classification subagents write only their own working file.
 - Each agent discovers its name from the file path stem (passed on spawn).
 
 ### Workflow & Sub-Skill Loading
@@ -207,6 +224,7 @@ On subagent `status: consolidated-ready`:
 3. Update summary counts in `.harness/STATE.md`
 4. Archive: move `.harness/SubAgent/<agent-name>.md` → `.harness/Archive/<agent-name>.md`
 5. Promote warnings → `.harness/Category/<category>.md` (surfaced in deliverable); advisories → `.harness/advisories/` (internal only)
+6. Spawn the next queued subagent (lead is the spawner) to refill the concurrency slot.
 
 **Serial constraint:** One consolidation must complete before next begins (even if subagents finish concurrently).
 
@@ -218,6 +236,7 @@ On subagent `status: consolidated-ready`:
 3. Post required artifact:
    - `awaiting-source-approval`: URL list + instructions: approve all / approve indexes / reject indexes
    - `awaiting-client-resume`: short note, user sends `resume`
+   - `awaiting-classification-go-ahead`: **mandatory pause after ingestion is verified complete and before any R1 classification subagent is spawned.** Post a summary of: ingested documents (count + brief titles), the frozen reference-list size, the planned R1 category partitions (category × parameter count × subagent name), and any sources dropped during ingestion. Ask the user to reply `go` (or any affirmative) to begin classification, or to amend scope first.
    - `ingestion-error-client-confirmation-needed`: list not-yet-ingested docs + "wait longer or proceed?"
    - `missing-required-input`: prompt for missing field(s) only
 4. Return control
@@ -233,63 +252,83 @@ On subagent `status: consolidated-ready`:
 **Lead agent reads:**
 - Preflight: this skill, `enums-reference`, frozen `.harness/params.csv`
 - Each stage: current stage definition (see `W1-workflow-definition`), named sub-skill(s), main `.harness/STATE.md` (status check)
-- Stage 6 consolidation: `.harness/DispatchAgent/dispatch.md` (dispatch envelope), then writes `.harness/Category/<category>.md`
+- Stage 4 consolidation: each `.harness/DownloadAgent/<slug>-dl.md` envelope (lead derives `block_type` from reported size)
+- Stage 6 partitioning: `.harness/params.csv` (only the lead reads this during classification)
+- Stage 6 consolidation: each `.harness/SubAgent/<agent-name>.md` and `.harness/DeepDiveAgent/<agent-name>.md` envelope, then writes `.harness/Category/<category>.md`
 
-**Dispatch subagent reads (on spawn):**
-- `stellantis-lead-agent-subagent-orchestration` skill (REQUIRED)
-- `enums-reference`
-- Own `.harness/DispatchAgent/dispatch.md` (contract embedded at top)
-- `.harness/params.csv` (authoritative parameter list)
-- `.harness/STATE.md` (read-only — for `kb_dataset_id`, `car_identity`, `resolved_trim`, `trim_package_map`)
+**Download/ingest subagent reads (on spawn):**
+- `stellantis-source-download-and-ingest` skill (REQUIRED)
+- Own `.harness/DownloadAgent/<slug>-dl.md` (contract embedded at top)
 
-**Dispatch subagent never touches:**
-- `.harness/STATE.md` (write)
-- Any `.harness/Category/*.md` file
-- Other subagent's working files (except seeding new SubAgent/DeepDiveAgent contracts)
+**Download/ingest subagent never touches:**
+- `.harness/STATE.md` (read or write)
+- `.harness/params.csv`
+- The content of the file it downloaded (size only, via `os.stat` or fetch tool return value)
+- Any other subagent's working file
+- `.harness/Category/*.md`
 
-**Classification subagent reads (on spawn):**
+**R1 classification subagent reads (on spawn):**
 - `stellantis-subagent-classification-loop` skill (REQUIRED)
 - `enums-reference`
 - `lead-to-subagent-contract` and `subagent-to-lead-contract`
-- Own `.harness/SubAgent/<agent-name>.md` (contract embedded at top)
+- Own `.harness/SubAgent/<agent-name>.md` (contract embedded at top, with full parameter slice)
 
-**Classification subagent never touches:**
+**R1 classification subagent never touches:**
 - `.harness/STATE.md`
+- `.harness/params.csv` (parameter slice is in the contract)
 - Any `.harness/Category/*.md` file
-- `.harness/DispatchAgent/dispatch.md`
+- Other subagent's working file
+- `.harness/downloads/*` (KB retrieval only — content arrives via `retrieval` / `list_chunks` / `ragflow_download`)
+
+**R2 deep-dive subagent reads (on spawn):**
+- `stellantis-subagent-doc-deep-dive` skill (REQUIRED)
+- `enums-reference`
+- Own `.harness/DeepDiveAgent/<agent-name>.md` (contract embedded at top, with gap-parameter slice)
+- The single file at `target_doc.local_path` (and only that file)
+
+**R2 deep-dive subagent never touches:**
+- `.harness/STATE.md`
+- `.harness/params.csv`
+- Any `.harness/Category/*.md` file
+- Any other file in `.harness/downloads/` apart from its assigned `target_doc.local_path`
 - Other subagent's working file
 
 ## Tool Allow-List
 
 Per-actor permissions (tool bindings in sub-skill files):
 
-| Capability          | Tools                                                                                                                       | Lead      | Dispatch Subagent | Classification Subagent |
-|:---                 |:---                                                                                                                         |:---       |:---               |:---                     |
-| Open-web search     | `google_search`, `google_search_news`, `google_search_images`, `google_search_videos`, `google_search_autocomplete`         | ✅        | ❌                | ❌                      |
-| Web content fetch   | `fetch_url` — saves webpage (→ Markdown) or binary (PDF/DOCX/XLSX/PPTX) to `.harness/downloads/`. No video/YouTube.       | ✅        | ❌                | ❌                      |
-| Browser (advanced)  | `browser_render_content`, `browser_render_scrape`, `browser_render_links` (use `fetch_url` for download use-cases)         | ✅ rare   | ❌                | ❌                      |
-| Crawl workflow      | `browser_crawl_create`, `browser_crawl_status`, `browser_crawl_cancel`                                                      | ✅        | ❌                | ❌                      |
-| Dataset mgmt        | `create_dataset`, `list_datasets`, `get_dataset_detail`, `update_dataset`, `delete_datasets`                                | ✅        | ❌                | ❌                      |
-| Document mgmt       | `ragflow_upload`, `list_docs`, `doc_infos`, `delete_docs`, `rename_doc`, `set_doc_metadata`, `batch_update_doc_metadata`    | ✅ write  | ❌                | ❌                      |
-| Metadata summary    | `get_metadata_summary`                                                                                                      | ✅        | ❌                | ✅ read-only            |
-| Chunk inspection    | `list_chunks`, `ragflow_download` (saves to `.harness/downloads/`)                                                          | ✅ rare   | ❌                | ✅                      |
-| Retrieval           | `retrieval`, `retrieve_knowledge_graph`                                                                                     | ✅ rare   | ❌                | ✅                      |
-| Tag operations      | `list_tags`, `set_tags`                                                                                                     | ✅        | ❌                | ❌                      |
-| File read           | `.harness/params.csv`, `.harness/STATE.md` (read-only), own working file                                                   | ✅        | ✅ read-only      | ✅ own file only        |
-| File write          | STATE.md, Category files, DispatchAgent contract, deliverables                                                              | ✅        | ❌ (read STATE.md only) | ❌             |
-| Spawn subagents     | dispatch subagent (stage 6), download subagents (stage 4), trim search (stage 1b)                                           | ✅        | ✅ (R1/R2 only)  | ❌                      |
+| Capability          | Tools                                                                                                                       | Lead      | Download/Ingest Subagent | R1 Classification Subagent | R2 Deep-Dive Subagent |
+|:---                 |:---                                                                                                                         |:---       |:---                      |:---                        |:---                   |
+| Open-web search     | `google_search`, `google_search_news`, `google_search_images`, `google_search_videos`, `google_search_autocomplete`         | ✅        | ❌                       | ❌                         | ❌                    |
+| Web content fetch   | `fetch_url` — saves to `.harness/downloads/`. Used by lead during discovery; used by download/ingest subagent at stage 4. | ✅        | ✅ (initial mode)        | ❌                         | ❌                    |
+| Backup web fetch    | `fetch_webpage` — retry-only, lead-spawned retry subagent.                                                                  | ✅ rare   | ✅ (retry-webpage mode)  | ❌                         | ❌                    |
+| Browser (advanced)  | `browser_render_content`, `browser_render_scrape`, `browser_render_links`                                                   | ✅ rare   | ❌                       | ❌                         | ❌                    |
+| Crawl workflow      | `browser_crawl_create`, `browser_crawl_status`, `browser_crawl_cancel`                                                      | ✅        | ❌                       | ❌                         | ❌                    |
+| Dataset mgmt        | `create_dataset`, `list_datasets`, `get_dataset_detail`, `update_dataset`, `delete_datasets`                                | ✅        | ❌                       | ❌                         | ❌                    |
+| Document mgmt       | `ragflow_upload`, `list_docs`, `doc_infos`, `delete_docs`, `rename_doc`, `set_doc_metadata`, `batch_update_doc_metadata`    | ✅ write  | ✅ `ragflow_upload` only | ❌                         | ❌                    |
+| Metadata summary    | `get_metadata_summary`                                                                                                      | ✅        | ❌                       | ✅ read-only               | ❌                    |
+| Chunk inspection    | `list_chunks`, `ragflow_download` (saves to `.harness/downloads/`)                                                          | ✅ rare   | ❌                       | ✅                         | ❌                    |
+| Retrieval           | `retrieval`, `retrieve_knowledge_graph`                                                                                     | ✅ rare   | ❌                       | ✅                         | ❌                    |
+| Local file read     | `read_file`                                                                                                                 | ✅        | ❌ (size-only via stat) | ❌ (KB only)               | ✅ own `target_doc.local_path` only |
+| Tag operations      | `list_tags`, `set_tags`                                                                                                     | ✅        | ❌                       | ❌                         | ❌                    |
+| File read           | `.harness/params.csv` (lead only), own working file                                                                          | ✅        | own working file only    | own working file only      | own working file only |
+| File write          | STATE.md, Category files, deliverables                                                                                       | ✅        | ❌                       | ❌                         | ❌                    |
+| Spawn subagents     | download/ingest (stage 4), retry-download (stage 4), R1 classification (stage 6a), R2 deep-dive (stage 6b), trim search (stage 1b) | ✅ (sole spawner) | ❌                       | ❌                         | ❌                    |
 
-Web search and browser rendering may be used only in source discovery and download phases (lead only). After ingestion completes, classification reads evidence exclusively from the knowledge base.
+Web search and browser rendering may be used only in source discovery and download phases. After ingestion completes, classification reads evidence exclusively from the knowledge base (R1) or a single local Markdown (R2).
 
 ## Common Mistakes
 
 - **Don't pre-load operational sub-skills** — load them lazily at the stage that needs them. Foundational skills (domain-context, decision-rules, output-contract, workflow-modes, failure-handling, kb-protocol, run-workspace) are the exception: they load at preflight and stay.
 - **Don't delay .harness creation** — it must be the first thing in preflight, before foundational skills are even loaded.
-- **Don't spawn the classification dispatch subagent before ingestion completes.** The harness must be fully set up and sources approved and ingested first. Violating this leaves the dispatch subagent with an empty KB.
-- **Don't let the lead directly spawn R1/R2 classification subagents.** That is the dispatch subagent's job. The lead spawns ONE dispatch subagent at stage 6 and waits for its envelope.
-- **Don't let the dispatch subagent write STATE.md or Category files** — it collects results in its own working file and the lead does all final writes.
-- **Don't let classification subagents use web search or browser tools** — they read evidence from the knowledge base only.
-- **Don't let classification subagents write STATE.md or category files** — violations corrupt consolidation.
+- **Don't spawn classification subagents before ingestion completes AND the user has issued the classification go-ahead.** After verifying ingestion the lead must pause with `PauseReason = awaiting-classification-go-ahead`, post the ingestion + partition summary, and wait for the user's explicit `go` reply. Spawning R1 subagents on the silent-completion of ingestion is a framework bug.
+- **Don't let any subagent spawn another subagent.** The lead is the sole spawner at every stage. If a flow seems to need nested spawning, consolidate the first envelope back to the lead and let the lead spawn the second.
+- **Don't let any subagent read `params.csv`.** The lead reads it once, partitions by category, and embeds the parameter slice (≤ 15 params, single-category) in each subagent's contract.
+- **Don't let download/ingest subagents read the file content** — they capture size only and report it. The lead does block-type classification.
+- **Don't let R1 classification subagents use web search, browser tools, or `fetch_url`** — they read evidence from the knowledge base only.
+- **Don't let R2 deep-dive subagents do KB retrieval or web search** — they read exactly one local Markdown.
+- **Don't let any subagent write STATE.md or Category files** — violations corrupt consolidation.
+- **Don't cross categories in a single partition.** Each R1 partition is a single-category slice of ≤ 15 parameters; large categories split into consecutive partitions.
 - **Don't batch lead consolidations** — serialize even if subagents finish concurrently.
 - **Don't write records before validating** — always check against template schema and enums first.
 - **Don't default required inputs.** If `brand`, `model`, `model_year`, or `market` is missing, pause and ask for that field only.

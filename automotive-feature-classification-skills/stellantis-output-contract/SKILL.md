@@ -81,12 +81,12 @@ Every parameter in the frozen reference list produces exactly **one** record. Re
 
 ## Deliverable format
 
-The deliverable is dual-serialised, written to the run workspace root:
+The deliverable is dual-serialised, written to **`/mnt/user-data/outputs/`** — a separate sandbox path, not the workspace. Filenames omit any directory prefix beyond that root:
 
-1. **Primary — JSON.** Filename: `<brand>-<model>-<year>-<market>-<run-id>.json`. Full schema, traceability blocks intact.
-2. **Secondary — CSV.** Same basename, `.csv` extension. Per-parameter records flattened to rows. Traceability is folded by URL concatenation or one-row-per-block expansion (whichever the CSV columns template prescribes).
+1. **Primary — JSON.** Path: `/mnt/user-data/outputs/<brand>-<model>-<year>-<market>-<run-id>.json`. Full schema, traceability blocks intact.
+2. **Secondary — CSV.** Same basename, `.csv` extension, in `/mnt/user-data/outputs/`. Per-parameter records flattened to rows. Traceability is folded by URL concatenation or one-row-per-block expansion (whichever the CSV columns template prescribes).
 
-Both files are emitted on every run. The internal `.harness/` folder is not part of the client-facing deliverable but is retained alongside it.
+Both files are emitted on every run. The internal `.harness/` folder (under `/mnt/user-data/workspace/`) is not part of the client-facing deliverable but is retained for audit.
 
 ### CSV emission — use a Python script
 
@@ -95,11 +95,11 @@ Direct LLM-authored CSV is error-prone: field quoting, comma escaping, and multi
 **Procedure:**
 
 1. Write `.harness/scripts/json_to_csv.py` — a self-contained Python 3 script that:
-   - Reads `<brand>-<model>-<year>-<market>-<run-id>.json`.
+   - Reads `/mnt/user-data/outputs/<brand>-<model>-<year>-<market>-<run-id>.json`.
    - Iterates `records[]` in order.
    - Flattens each record to a row per the column specification in `templates/deliverable.csv.columns.md`.
    - Uses Python's `csv.writer` (not string concatenation) for correct quoting.
-   - Writes to `<brand>-<model>-<year>-<market>-<run-id>.csv`.
+   - Writes to `/mnt/user-data/outputs/<brand>-<model>-<year>-<market>-<run-id>.csv`.
 2. Execute the script via the code execution tool.
 3. Verify the output file exists and its row count equals the JSON `records[]` length.
 

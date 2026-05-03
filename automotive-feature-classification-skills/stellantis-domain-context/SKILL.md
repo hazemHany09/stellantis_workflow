@@ -64,7 +64,8 @@ Use these terms exactly. Other documents and skills depend on them.
 | **Clear / vague / silent source** | A source's relationship to a single parameter. *Clear* = mentions the parameter and gives usable, schema-mappable information. *Vague* = mentions but cannot be mapped. *Silent* = does not mention at all. The same document can be clear for one parameter and silent for another. |
 | **Active source** | Any source that is not silent for the parameter. |
 | **Knowledge base / KB** | The retrieval substrate. Populated only with approved, ingested source documents. The exclusive evidence channel during classification. |
-| **Run workspace** | A per-run directory containing the deliverable plus an internal `.harness/` working folder. |
+| **Run workspace** | The fixed host path `/mnt/user-data/workspace/`. Contains exactly one entry: the internal `.harness/` working folder. Final deliverables are written to `/mnt/user-data/outputs/` (separate path); user-supplied inputs arrive read-only at `/mnt/user-data/uploads/`. The agent has no access outside these three paths. |
+| **Filesystem sandbox** | The three host paths the agent is allowed to touch: `/mnt/user-data/workspace/` (read+write, run state under `.harness/`), `/mnt/user-data/outputs/` (read+write, deliverables only), `/mnt/user-data/uploads/` (read-only, user-supplied inputs). See `stellantis-run-workspace`. |
 | **Full-option trim** | The manufacturer's published top trim for the (model, year, market). Resolved automatically; recorded in the deliverable header. |
 
 ## Master invariants

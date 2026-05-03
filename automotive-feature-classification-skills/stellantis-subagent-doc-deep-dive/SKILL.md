@@ -40,12 +40,13 @@ The deep-dive subagent **does not search**. It reads exactly one Markdown file f
 
 ## When this runs
 
-W1 stage 6b. After Round-1 search-mode subagents have all reported their result envelopes, the lead has:
+W1 stage 6d. After Round-1 search-mode subagents have all reported their result envelopes, the **lead** (sole spawner — there is no dispatch subagent layer) has:
 
-1. Aggregated `document_promise_scores[]` across the partitions.
+1. Aggregated `document_promise_scores[]` across the partitions into `.harness/document-promise-board.md`.
 2. Identified parameters that finalised at Rule 3 / Rule 4, OR Rule 1 / Rule 5 with `confidence = single-source` and a corroborating source plausibly available in another doc.
-3. Picked the highest-promise documents that, taken together, cover the gap parameters.
-4. Pre-seeded a deep-dive working file at `runs/<run-id>/.harness/DeepDiveAgent/<agent-name>.md`, with one deep-dive subagent per (target document × gap-parameter-list) pairing.
+3. Picked the highest-promise documents that, taken together, cover the gap parameters (greedy set-cover, capped at 6 deep-dives per run).
+4. Pre-seeded a deep-dive working file at `.harness/DeepDiveAgent/<agent-name>.md`, with one deep-dive subagent per (target document × gap-parameter-list) pairing — single-category-bound (gap parameters from one category per deep-dive).
+5. Spawned this subagent itself. **The R2 deep-dive subagent does not spawn anything else and does not read `params.csv`** — its gap-parameter slice arrives in the contract.
 
 ## Identity discovery
 
@@ -65,7 +66,7 @@ The subagent is invoked with the absolute path of its working file as the first 
   "target_doc": {
     "doc_id": "<id>",
     "canonical_url": "<url>",
-    "local_path": ".harness/downloads/<filename>",
+    "local_path": "/mnt/user-data/workspace/.harness/downloads/<filename>",
     "source_type": "<from KB metadata>"
   },
   "gap_parameters": [

@@ -16,7 +16,7 @@ You have access to the same sandbox environment as the parent agent:
 
 ## Your Tools
 
-You have access to **only** `serper_google_search`. Do not attempt to use RAGFlow retrieval, file upload, or browser rendering tools.
+You have access to **only** `serper_google_search`.
 
 ## Guidelines
 
@@ -34,7 +34,7 @@ Load the `serper` skill and `classification-rules` skill.
 
 ### Step 3 — Build search queries
 
-Using the `serper` skill, generate targeted searches for this parameter:
+Using the `serper` skill, generate targeted searches for this parameter. **Maximum 5 search queries total.**
 
 **Query 1 — Direct feature presence:**
 ```

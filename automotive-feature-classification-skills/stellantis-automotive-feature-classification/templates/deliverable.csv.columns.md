@@ -2,7 +2,7 @@
 
 Secondary tabular deliverable. Flattens the JSON deliverable into a tabular form for analyst review.
 
-File: `runs/<run-id>/deliverable.csv`.
+File: `/mnt/user-data/outputs/<brand>-<model>-<year>-<market>-<run-id>.csv`.
 
 ## Columns (in order)
 

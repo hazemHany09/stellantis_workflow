@@ -1,6 +1,6 @@
 ---
 name: serper
-description: Use whenever you need to search the web. Provides operator knowledge for precise, high-signal searches using google_search and related tools.
+description: Use whenever you need to search the web with serper. Provides operator knowledge for precise, high-signal searches using google_search and related tools.
 ---
 
 # Serper Web Search

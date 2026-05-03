@@ -159,7 +159,7 @@ Written once at Round 1 → Round 2 hand-off. Read-only after this point.
       "agent_name": "<<name>>",
       "target_doc_id": "<<id>>",
       "target_doc_slug": "<<slug>>",
-      "target_doc_local_path": ".harness/downloads/<<slug>>.<ext>",
+      "target_doc_local_path": "/mnt/user-data/workspace/.harness/downloads/<<slug>>.<ext>",
       "gap_param_ids": ["<<id1>>", "<<id2>>"],
       "promise_score": 0.0,
       "selection_rationale": "<<short string>>"

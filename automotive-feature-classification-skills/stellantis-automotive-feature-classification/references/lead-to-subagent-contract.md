@@ -1,6 +1,12 @@
 # Lead → Subagent Contract
 
-The JSON shape the lead agent embeds at the top of `.harness/SubAgent/<agent-name>.md` when spawning a subagent. The subagent reads this block before doing anything else.
+The JSON shape the lead agent embeds at the top of `.harness/SubAgent/<agent-name>.md` when spawning an R1 classification subagent. The subagent reads this block before doing anything else.
+
+**Hard rules enforced by this contract:**
+- The subagent's parameter slice is fully self-contained in `parameters[]`. The subagent **never** reads `.harness/params.csv` — reading it is a framework violation.
+- All parameters in a single contract come from the **same `Domain / Category`** value. Partitions never cross categories.
+- A single contract carries **at most 15 parameters**. Larger categories are split into multiple consecutive partitions by the lead.
+- The subagent **never spawns another subagent**.
 
 ## Shape
 
@@ -53,11 +59,9 @@ The JSON shape the lead agent embeds at the top of `.harness/SubAgent/<agent-nam
     "retrieval",
     "retrieve_knowledge_graph",
     "list_chunks",
-    "download_attachment",
+    "ragflow_download",
     "doc_infos",
-    "get_metadata_summary",
-    "set_doc_metadata",
-    "batch_update_doc_metadata"
+    "get_metadata_summary"
   ],
   "created_at": "<ISO-8601 UTC timestamp>"
 }
@@ -66,10 +70,12 @@ The JSON shape the lead agent embeds at the top of `.harness/SubAgent/<agent-nam
 ## Field notes
 
 * **`agent_name`** — matches the filename stem of the working file. Derived from `<category-slug>-<partition-index>`.
+* **`category`** — the single `Domain / Category` value all parameters in this contract belong to. The contract is rejected at validation if any parameter's category differs.
 * **`parameter_ids`** — stable id formed by `<category-slug>:<row-index-in-params.csv>`. Used for cross-referencing.
-* **`parameters`** — full self-contained parameter descriptors so the subagent never needs to read `params.csv` again. Criteria cells that are empty in the CSV are emitted as JSON `null`, which is how the subagent knows the tier is not in the applicable set.
-* **`budgets`** — per [`skills/subagent-classification-loop/SKILL.md`](../skills/subagent-classification-loop/SKILL.md). Main loop = query→read→update cycles; fallback loop = targeted hybrid retrieval on still-unresolved parameters.
-* **`tool_allowlist`** — the exact list enforced by the subagent classification skill. Any tool not on this list is a bug.
+* **`parameters`** — full self-contained parameter descriptors. The subagent **never** needs to read `params.csv` — attempting to do so is a framework violation. Criteria cells that are empty in the CSV are emitted as JSON `null`, which is how the subagent knows the tier is not in the applicable set.
+* **Partition size:** `parameters.length ≤ 15`. Categories larger than 15 are split into multiple consecutive partitions by the lead.
+* **`budgets`** — per [`subagent-classification-loop`](../../skills/subagent-classification-loop/SKILL.md). Main loop = query→read→update cycles; fallback loop = targeted hybrid retrieval on still-unresolved parameters.
+* **`tool_allowlist`** — the exact list enforced by the subagent classification skill. Notably it does **not** include `set_doc_metadata` or `batch_update_doc_metadata` — R1 subagents stage metadata patches in their result envelope; only the lead applies them. It does **not** include any web-search, browser, `fetch_url`, `fetch_webpage`, or `read_file` tool. Any tool not on this list is a bug.
 
 ## Writing rule
 

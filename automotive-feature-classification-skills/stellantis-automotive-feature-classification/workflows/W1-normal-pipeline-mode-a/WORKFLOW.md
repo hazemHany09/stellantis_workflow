@@ -14,12 +14,15 @@ Trigger: the user submits a classification request. URLs and domains are optiona
 | 3  | `source-discovery`       | Lead     | no               | [`source-discovery-with-client-domains`](../../skills/source-discovery-with-client-domains/SKILL.md) or [`source-discovery-without-client-domains`](../../skills/source-discovery-without-client-domains/SKILL.md) → [`source-validation`](../../skills/source-validation/SKILL.md) |
 | 3b | `post-candidate-list`    | Lead     | **yes**          | — (writes the list and pauses)                                                                                                                                        |
 | 3c | `parse-approval-reply`   | Lead     | no               | — (inline logic; resumes from 3b)                                                                                                                                     |
-| 4  | `download-and-upload`    | Lead     | no               | [`source-download-and-ingest`](../../skills/source-download-and-ingest/SKILL.md)                                                                                      |
+| 4  | `download-and-upload`    | Lead + download/ingest subagents | no | [`source-download-and-ingest`](../../skills/source-download-and-ingest/SKILL.md) — lead spawns one content-blind download/ingest subagent per approved URL |
 | 4b | `await-ingestion-resume` | Lead     | **yes**          | —                                                                                                                                                                     |
 | 5  | `verify-ingestion`       | Lead     | maybe            | [`source-download-and-ingest`](../../skills/source-download-and-ingest/SKILL.md) (resume path)                                                                        |
-| 6  | `partition-and-spawn`    | Lead     | no               | [`lead-agent-subagent-orchestration`](../../skills/lead-agent-subagent-orchestration/SKILL.md)                                                                        |
-| 6a | `subagent-classify`      | Subagent | no               | [`subagent-classification-loop`](../../skills/subagent-classification-loop/SKILL.md)                                                                                  |
-| 6b | `consolidate`            | Lead     | no               | [`lead-agent-subagent-orchestration`](../../skills/lead-agent-subagent-orchestration/SKILL.md) (consolidation path)                                                   |
+| 6  | `partition-and-spawn-r1` | Lead     | no               | [`lead-agent-subagent-orchestration`](../../skills/lead-agent-subagent-orchestration/SKILL.md) — lead reads `params.csv`, partitions by category, spawns R1 subagents directly |
+| 6a | `subagent-classify-r1`   | R1 Subagent | no            | [`subagent-classification-loop`](../../skills/subagent-classification-loop/SKILL.md)                                                                                  |
+| 6b | `consolidate-r1`         | Lead     | no               | [`lead-agent-subagent-orchestration`](../../skills/lead-agent-subagent-orchestration/SKILL.md) (consolidation pass A)                                                  |
+| 6c | `partition-and-spawn-r2` | Lead     | no               | [`lead-agent-subagent-orchestration`](../../skills/lead-agent-subagent-orchestration/SKILL.md) — lead picks gap parameters + target docs, spawns R2 deep-dives directly |
+| 6d | `subagent-deepdive-r2`   | R2 Subagent | no            | [`subagent-doc-deep-dive`](../../skills/subagent-doc-deep-dive/SKILL.md)                                                                                              |
+| 6e | `consolidate-r2`         | Lead     | no               | [`lead-agent-subagent-orchestration`](../../skills/lead-agent-subagent-orchestration/SKILL.md) (consolidation pass B — R1+R2 merge)                                    |
 | 7  | `emit-deliverable`       | Lead     | no               | — (inline; uses [`deliverable.schema.json`](../../templates/deliverable.schema.json) + [`deliverable.csv.columns.md`](../../templates/deliverable.csv.columns.md))    |
 | 8  | `mark-complete`          | Lead     | no               | —                                                                                                                                                                     |
 
@@ -75,7 +78,7 @@ Trigger: the user submits a classification request. URLs and domains are optiona
    * **Agent-discovered (no URLs or domains supplied):** Load [`source-discovery-without-client-domains`](../../skills/source-discovery-without-client-domains/SKILL.md); run. Cap list at 20 URLs (or client-specified cap) before validation.
 2. Load [`source-validation`](../../skills/source-validation/SKILL.md); run on the candidate list produced by whichever branch executed.
 
-**Success.** `runs/<run-id>/source-candidate-list.md` exists with ≥ 1 row.
+**Success.** `/mnt/user-data/workspace/.harness/source-candidates.md` exists with \u2265 1 row.
 
 **Failure.** Per the two sub-skills. If zero candidates survive and the user holds credentials, pause and ask; else abort with `RunStatus = failed`.
 
@@ -121,7 +124,7 @@ Accepted patterns (case-insensitive, tolerant of surrounding prose):
 
 **Inputs.** Approved URL set from `source-approved.md`.
 
-**Actions.** Load [`source-download-and-ingest`](../../skills/source-download-and-ingest/SKILL.md). Run through the download → upload sequence; ingestion is queued by the knowledge base on upload. Set `ingestion_started_at` in STATE.md.
+**Actions.** Load [`source-download-and-ingest`](../../skills/source-download-and-ingest/SKILL.md). The lead spawns **one content-blind download/ingest subagent per approved URL**. Each subagent calls `fetch_url` (or `fetch_webpage` in retry mode) and `ragflow_upload`, captures the saved file's byte size, and reports a result envelope. **The subagent never reads the file's contents.** The lead derives `block_type` from the reported size + HTTP status, decides retries, and runs ingestion. Set `ingestion_started_at` in STATE.md.
 
 **Pause boundary.** End of stage 4 = stage 4b pause.
 
@@ -155,36 +158,70 @@ Accepted patterns (case-insensitive, tolerant of surrounding prose):
 
 ***
 
-## Stage 6 — Partition + spawn
+## Stage 6 — Partition + spawn R1 (lead is the spawner)
 
-**Inputs.** Frozen `params.csv`, `kb_dataset_id`, `car_identity`, resolved trim.
+**Inputs.** Frozen `.harness/params.csv`, `kb_dataset_id`, `car_identity`, resolved trim.
 
-**Actions.** Load [`lead-agent-subagent-orchestration`](../../skills/lead-agent-subagent-orchestration/SKILL.md).
+**Actions.** Load [`lead-agent-subagent-orchestration`](../../skills/lead-agent-subagent-orchestration/SKILL.md). The lead performs every step — there is no dispatch subagent.
 
-1. Partition parameters into batches of ≤15 parameters each (preserving CSV row order).
-2. Write the subagent roster into STATE.md.
-3. Pre-seed each `.harness/SubAgent/<agent-name>.md` with the contract.
-4. Spawn up to 3 subagents concurrently; queue the rest.
+1. **Lead reads `.harness/params.csv` directly.** No subagent ever reads `params.csv`.
+2. Partition parameters: enumerate `Domain / Category` values; per category, split into consecutive groups of ≤ 15 parameters in CSV row order. **No partition crosses two categories.**
+3. Write the R1 subagent roster into STATE.md.
+4. Pre-seed each `.harness/SubAgent/<agent-name>.md` with a contract that embeds the **exact parameter slice** (full `parameters[]` array — self-contained) so the subagent never needs `params.csv`.
+5. **Lead spawns R1 subagents directly** (max 3 concurrent; queue the rest).
 
-**Sub-actors (stage 6a).** Each spawned subagent runs [`subagent-classification-loop`](../../skills/subagent-classification-loop/SKILL.md) independently.
+**Sub-actor (stage 6a).** Each spawned R1 subagent runs [`subagent-classification-loop`](../../skills/subagent-classification-loop/SKILL.md) independently. R1 subagents do not spawn anything.
 
 ***
 
-## Stage 6b — Consolidate
+## Stage 6b — Consolidate R1 (lead consolidation pass A)
 
 Loop invariant: one subagent consolidated at a time even if multiple finish simultaneously.
 
-Per finished subagent (per orchestration skill):
+Per finished R1 subagent (per orchestration skill):
 
 1. Validate envelope.
 2. Apply `docs_metadata_updates[]`.
 3. Merge records into `.harness/Category/<category>.md`.
 4. Promote warnings + advisories.
-5. Move working file to Archive. SubagentStatus = archived.
-6. Update STATE.md counts.
-7. Spawn the next queued subagent (if any) to refill the concurrency slot.
+5. Append `document_promise_scores[]` to `.harness/document-promise-board.md` (deduped by `doc_id`).
+6. Append `partition_summary` to `.harness/partition-summaries.md`.
+7. Move working file to Archive. SubagentStatus = archived.
+8. Update STATE.md counts.
+9. **Lead spawns** the next queued R1 subagent (if any) to refill the concurrency slot.
 
-Exit stage when all subagents are archived or failed (with lead-written Rule-4 fallback records).
+Exit stage when all R1 subagents are archived or failed (with lead-written Rule-4 fallback records).
+
+***
+
+## Stage 6c — Partition + spawn R2 deep-dives (lead is the spawner)
+
+**Trigger.** All R1 subagents archived.
+
+**Actions.**
+
+1. Lead walks every R1 record and identifies **gap parameters** (Rule 4, Rule 3, or Rule 1/5 with `confidence = single-source`).
+2. Lead walks `.harness/document-promise-board.md` and uses greedy set-cover to pick target documents that, taken together, cover the gap parameters. Cap at 6 deep-dives per run.
+3. For each (target_doc × gap_parameters) tuple, lead pre-seeds `.harness/DeepDiveAgent/<agent-name>.md` with the deep-dive contract (single-category, embeds gap-parameter slice, embeds `target_doc.local_path`).
+4. **Lead spawns R2 deep-dive subagents directly** (max 3 concurrent; queue the rest).
+
+**Sub-actor (stage 6d).** Each spawned R2 subagent runs [`subagent-doc-deep-dive`](../../skills/subagent-doc-deep-dive/SKILL.md). R2 subagents read exactly one local Markdown via `read_file`; no KB, no web, no spawning.
+
+***
+
+## Stage 6e — Consolidate R2 (lead consolidation pass B — merge)
+
+Per finished R2 subagent:
+
+1. Validate deep-dive envelope.
+2. Apply the merge logic (see orchestration skill) against the existing R1 record in `.harness/Category/<category>.md`.
+3. Apply staged `docs_metadata_updates[]`.
+4. Promote warnings + advisories.
+5. Move working file to Archive.
+6. Update STATE.md counts (R2 upgrades, Rule 4 remaining).
+7. **Lead spawns** the next queued R2 (if any).
+
+Exit when all R2 deep-dives are archived or failed. Lead does the final STATE.md update (mandatory — see orchestration skill Step 10).
 
 ***
 
@@ -202,7 +239,7 @@ Exit stage when all subagents are archived or failed (with lead-written Rule-4 f
    * `records[]` in CSV row order, one per parameter in `params.csv`.
    * Footer `sources_excluded`; plus run-level warnings.
 2. **Produce `deliverable.csv` via Python script** — write `.harness/scripts/json_to_csv.py` that reads the JSON deliverable and converts it to CSV using Python's `csv.writer` (not string concatenation). Execute the script. Verify row count equals `records[]` length. See `stellantis-output-contract` for the full procedure and column specification.
-3. Write both to the run workspace root.
+3. Write both to `/mnt/user-data/outputs/<brand>-<model>-<year>-<market>-<run-id>.{json,csv}`. (`/mnt/user-data/outputs/` is a separate sandbox path \u2014 not the workspace and not under `.harness/`.)
 4. Set RunStage = `deliverable`.
 
 **Invariants.** Every record in `deliverable.json` validates against the schema. Number of `records` == number of parameters in frozen CSV.
