@@ -39,18 +39,25 @@ Save to `/mnt/user-data/workspace/downloads/`.
 **Fetch decision tree:**
 
 1. **Call `fetch_url`** (attempt 1).
-2. **If access denied (HTTP 401 / 403 / access-denied response):**
+2. **After a successful `fetch_url` response — check file size:**
+   - If the downloaded file is unusually small for a document that should have content, **read the file content** to verify it is not an access-denied or blocked response (look for markers such as "Access Denied", "403 Forbidden", "Rate Limit", "Too Many Requests", or similar error text in the body).
+   - If the content indicates **access-denied** → treat as HTTP 401/403 (go to step 3).
+   - If the content indicates **rate-limiting** → treat as rate-limited (go to step 4).
+   - Otherwise → proceed to upload.
+3. **If access denied (HTTP 401 / 403 / access-denied response or confirmed via content check):**
    - Source is an HTML webpage → fall back to `fetch_webpage` (one attempt). If that also fails → mark as `failed-to-download`.
    - Source is a binary file (PDF, DOCX, etc.) → mark as `failed-to-download` immediately. Do not call `fetch_webpage`.
-3. **If rate-limited or timed-out:**
-   - Call `fetch_url` a second time (attempt 2).
+4. **If rate-limited or timed-out (HTTP 429 / timeout / confirmed via content check):**
+   - **Sleep 10 seconds**, then call `fetch_url` a second time (attempt 2).
    - If attempt 2 also returns rate-limit or timeout:
      - Source is an HTML webpage → fall back to `fetch_webpage` (one attempt). If that also fails → mark as `failed-to-download`.
      - Source is a binary file → mark as `failed-to-download`. Do not call `fetch_webpage`.
-4. **If `fetch_webpage` fallback also fails** for any reason → mark as `failed-to-download`.
-5. **Any other error on attempt 1** → mark as `failed-to-download`.
+5. **If `fetch_webpage` fallback also fails** for any reason → mark as `failed-to-download`.
+6. **Any other error on attempt 1** → mark as `failed-to-download`.
 
 > **Determining source type:** A source is an HTML webpage if the URL does not end in a binary extension (`.pdf`, `.docx`, `.xlsx`, `.pptx`) and the server response (or URL path) indicates HTML content. Otherwise treat it as a binary file.
+
+> **Determining `doc_type`:** Set `doc_type` based on the fetch method that ultimately succeeded: `pdf` for PDF binary, `docx`/`xlsx`/`pptx` for other binary formats, `webpage` if `fetch_webpage` was used or the file is HTML content.
 
 ### Step 3 — Upload to RAGFlow
 
@@ -71,7 +78,7 @@ Output exactly one of these JSON results in your final turn:
 
 **Success:**
 ```json
-{"status": "success", "url": "<url>", "doc_id": "<doc_id>", "filename": "<filename>", "source_type": "<source_type>"}
+{"status": "success", "url": "<url>", "doc_id": "<doc_id>", "filename": "<filename>", "source_type": "<source_type>", "doc_type": "<doc_type>"}
 ```
 
 **Excluded:**
@@ -81,4 +88,4 @@ Output exactly one of these JSON results in your final turn:
 
 Reason values: `failed-to-download`, `upload-failed`.
 
-Do not read the downloaded file's contents.
+Do not read the downloaded file's contents **except** in the two cases specified in the fetch decision tree: (1) file size is suspiciously small and you must verify it is not an access-denied response, and (2) you need to confirm a rate-limit condition from the body. In all other cases, do not read file contents.

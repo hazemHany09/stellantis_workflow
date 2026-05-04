@@ -21,10 +21,13 @@ You have access to **only** `ragflow_retrieval`. Do not attempt to use web searc
 ### Step 1 — Read the contract file
 
 The path to your contract file is provided in the task prompt. Read the full file. It contains:
-- The parameter name, category, and ID
-- The classification levels and their criteria
+- The parameter name, category, category description, and ID
+- The parameter description
+- The classification levels and their criteria (only levels defined for this parameter are listed)
 - The car identity and dataset ID (in `## Task` section)
 - An empty `## Result` block that you must fill
+
+**Available levels only:** The `## Classification Levels` table lists the only valid classification levels for this parameter. Not all parameters have Basic, Medium, and High. Some may have only Basic; some only Medium and High; etc. You must classify to one of the levels present in the table — never assign a level that is not listed, even if evidence appears to support it.
 
 ### Step 2 — Load source type map from STATE.md
 
@@ -58,10 +61,12 @@ Load the `retrieval-queries` skill and `classification-rules` skill. These tell 
 
 ### Step 4 — Query the RAGFlow KB
 
-Use the `dataset_id` from the `## Task` section. Follow the `retrieval-queries`
+Use the `dataset_id` from the `## Task` section. Follow the `retrieval-queries` skill for multi-query strategy.
+
+**Hard retrieval budget: maximum 10 queries.** Track your query count from the first call. Stop querying as soon as you have sufficient clear evidence to apply a decision rule. Do not exceed 10 queries under any circumstances — even if evidence remains incomplete. When the budget is exhausted, finalise with what you have.
 
 ### Step 5 — Apply decision rules
-Apply the decision rules from `classification-rules` skill.
+Apply the decision rules from `classification-rules` skill. When assigning a classification level, use only levels listed in the `## Classification Levels` table of the contract file.
 
 ### Step 6 — Write the ## Result block
 

@@ -79,7 +79,21 @@ Create a RAGFlow dataset (knowledge base) for this run. Save the `dataset_id`.
 If the user specified parameters explicitly: use that list.
 If not: copy `params.csv` to `classification-tasks/params-frozen.csv`. This is the authoritative reference for the run — do not modify it after this point.
 
-Read classification levels (level labels + descriptions per parameter) from the frozen reference.
+**CSV column schema (exact column names):**
+
+| Column | Used as |
+|--------|---------|
+| `Parameter` | Parameter name |
+| `Domain / Category` | Category |
+| `Category Description` | Short category description |
+| `Category Overview` | Full category overview / context |
+| `Parameter Description` | What the parameter measures |
+| `Basic Criterion` | Level 1 classification criterion |
+| `Medium Criterion` | Level 2 classification criterion |
+| `High Criterion` | Level 3 classification criterion |
+| `Optimised Parameter Name` | Cleaned name used in retrieval queries |
+
+There is no ID column — generate a sequential ID `P{row_index:03d}` (1-indexed) per row when creating contract files. This generated ID is the canonical `parameter_id` for the run.
 
 ---
 
@@ -100,19 +114,25 @@ Confirm the trim name from an official source. Record it as `resolved_trim`.
 
 Create the `classification-tasks/` directory.
 
-At this point `brand`, `model`, `model_year`, `market`, `resolved_trim`, and `dataset_id` are all known. Spawn one **general-purpose** subagent to write ALL contract files in a single pass with the `## Task` section fully pre-populated. The prompt must include:
-- The absolute path to the output directory: `/mnt/user-data/workspace/classification-tasks/`
-- The file naming convention: `<parameter_id>-<parameter_name_slug>.md`
-- The full contract file template (copy it verbatim from `task-contracts` into the prompt — do **not** tell the agent to load `task-contracts`)
-- The full parameter list from `params-frozen.csv` as a file path the agent can read
-- Instruction to write one `.md` file per parameter, pre-populating the `## Task` section with:
-  - `brand`, `model`, `model_year`, `market`
-  - `resolved_trim`
-  - `dataset_id`
-  - The parameter's `id`, `name`, `category`, and all level definitions from params-frozen.csv
-- Instruction to leave the `## Result` section empty (placeholder only)
+At this point `brand`, `model`, `model_year`, `market`, `resolved_trim`, and `dataset_id` are all known. **Write and execute a Python script inline** to generate all contract files in a single pass — do not spawn a subagent for this step.
 
-Do not spawn one agent per parameter here — a single general-purpose agent writes all contracts.
+The script must:
+1. Read `params-frozen.csv` from `/mnt/user-data/workspace/classification-tasks/params-frozen.csv`
+2. For each row (1-indexed), generate `parameter_id = f"P{i:03d}"` 
+3. Map CSV columns to contract fields using **exact column names**:
+   - `Parameter` → `parameter_name`
+   - `Domain / Category` → `category`
+   - `Category Description` → `category_description`
+   - `Category Overview` → `category_overview`
+   - `Parameter Description` → `parameter_description`
+   - `Optimised Parameter Name` → `optimised_parameter_name`
+   - `Basic Criterion`, `Medium Criterion`, `High Criterion` → level rows (omit any column that is blank/NaN)
+4. Render the full contract file using the template from `task-contracts` skill — substituting all fields above plus `brand`, `model`, `model_year`, `market`, `resolved_trim`, `dataset_id`
+5. Write each file to `/mnt/user-data/workspace/classification-tasks/<parameter_id>-<optimised_name_slug>.md`
+6. Leave the `## Result` block as an empty JSON placeholder
+7. Print a count of files written on completion
+
+Do not spawn any subagent for this step — the lead agent runs the script directly.
 
 ---
 
@@ -130,8 +150,8 @@ Write minimal state file to `/mnt/user-data/workspace/STATE.md`:
 - **Status:** source-discovery
 
 ## Sources
-| # | URL | source_type | description | doc_id | status |
-|---|-----|-------------|-------------|--------|--------|
+| # | URL | source_type | doc_type | description | doc_id | status |
+|---|-----|-------------|----------|-------------|--------|--------|
 ```
 
 Update `Status` field at each stage transition. Update the `Sources` table whenever a source changes state (`pending` → `approved` → `downloading` → `ingesting` → `ingested`, or `failed: <reason>` at any step).
@@ -169,17 +189,18 @@ Present the candidate URL list to the user as a detailed table:
 ```
 Found N candidate sources for <brand> <model> <model_year> <market>:
 
-| # | URL | `source_type` | Reliability Tier | Description | Coverage | Notes |
-|---|-----|--------------|-----------------|-------------|----------|-------|
-| 1 | <url> | `manufacturer_official_spec` | Tier 1 — Manufacturer | Official trim specifications page | Full trim options, standard vs optional | Definitive for trim availability |
-| 2 | <url> | `manufacturer_owner_manual` | Tier 1 — Manufacturer | Owner/press manual (PDF) | All features, detailed specs | Highest detail, may be region-specific |
-| 3 | <url> | `dealer_fleet_guide` | Tier 2 — Dealer | Dealer fleet order guide | Standard vs optional per trim | Confirms fitment at trim level |
-| 4 | <url> | `third_party_press_long_form` | Tier 3 — Editorial | Long-form review from <outlet> | Real-world feature behaviour | Corroborating signal, not definitive |
-| 5 | <url> | `third_party_aggregator` | Tier 4 — Third-party | Trim comparison matrix (Edmunds/KBB) | Feature availability across trims | Good for cross-trim checks |
-| 6 | <url> | `forum_or_ugc` | Tier 5 — Community | Owner discussion thread | Specific feature questions | Soft signal only — never sole source |
+| # | URL | `source_type` | `doc_type` | Reliability Tier | Description | Coverage | Notes |
+|---|-----|--------------|-----------|-----------------|-------------|----------|-------|
+| 1 | <url> | `manufacturer_official_spec` | `webpage` | Tier 1 — Manufacturer | Official trim specifications page | Full trim options, standard vs optional | Definitive for trim availability |
+| 2 | <url> | `manufacturer_owner_manual` | `pdf` | Tier 1 — Manufacturer | Owner/press manual (PDF) | All features, detailed specs | Highest detail, may be region-specific |
+| 3 | <url> | `dealer_fleet_guide` | `pdf` | Tier 2 — Dealer | Dealer fleet order guide | Standard vs optional per trim | Confirms fitment at trim level |
+| 4 | <url> | `third_party_press_long_form` | `webpage` | Tier 3 — Editorial | Long-form review from <outlet> | Real-world feature behaviour | Corroborating signal, not definitive |
+| 5 | <url> | `third_party_aggregator` | `webpage` | Tier 4 — Third-party | Trim comparison matrix (Edmunds/KBB) | Feature availability across trims | Good for cross-trim checks |
+| 6 | <url> | `forum_or_ugc` | `webpage` | Tier 5 — Community | Owner discussion thread | Specific feature questions | Soft signal only — never sole source |
 
 Column definitions:
 - **`source_type`:** Canonical source type value (from the Evidence Source Types table above) — use these exact values in `STATE.md` and contract files
+- **`doc_type`:** Document format — `pdf` for binary documents, `webpage` for scraped HTML pages, `docx`/`xlsx` for other binary formats. Infer from URL extension; the downloader confirms the actual type.
 - **Reliability Tier:** Tier 1 (highest) → Tier 5 (lowest) per business domain rules
 - **Description:** What the page/document contains
 - **Coverage:** Which parameters or feature areas this source is likely to address
@@ -203,18 +224,32 @@ On approval: parse the reply for removals or additions. Update the candidate lis
 
 ### Stage 9 — Download and Ingest
 
-Spawn one `document-downloader-agent` per approved URL. The task prompt for each agent must include:
+Spawn `document-downloader-agent` agents in **batches of maximum 5 in parallel**. Wait for each batch to complete before spawning the next batch.
+
+The task prompt for each agent must include:
 - `url`: the source URL to download
 - `dataset_id`: the RAGFlow dataset ID for this run
 - `source_type`: the canonical source type value for this URL (taken from the `source_type` column in the `## Sources` table in `STATE.md`) — classifier agents will read this directly from `STATE.md` using the `doc_id` returned after ingestion.
-- include all the metadata about the source in the prompt to the subagent.
+- `doc_type`: the document type (`pdf`, `webpage`, `docx`, etc.) from the `doc_type` column in `STATE.md`
+- All other metadata about the source.
 
 **Per-source status lifecycle:**
 
 1. **Before spawning the agent:** set that source's status in `STATE.md` → `downloading`
 2. **The subagent downloads the file and triggers ingestion into RAGFlow:** once the subagent confirms the upload/ingest call was made, set status → `ingesting`
 
-Collect results: success (with `doc_id` and `source_type`) or failed (with reason) so that you can update the `STATE.md` accordingly.
+Collect results: success (with `doc_id`, `source_type`, and `doc_type`) or failed (with reason) so that you can update `STATE.md` accordingly.
+
+---
+
+### Stage 9b — Deduplicate Ingested Documents
+
+After **all** downloader batches complete, call `list_docs` with the `dataset_id` to retrieve the full document list. Group documents by name (filename). For any group with two or more documents sharing the same name:
+1. Keep the document that was ingested or, if both not ingested, keep the one with the earliest `create_time`.
+2. Delete all others using `delete_docs` (pass a list of their `doc_id` values).
+3. Remove the deleted documents' rows from `STATE.md`.
+
+If no duplicates are found, skip this step silently.
 
 ---
 
@@ -230,12 +265,12 @@ Collect results: success (with `doc_id` and `source_type`) or failed (with reaso
 ```
 Ingestion status for <brand> <model> <model_year> <market>:
 
-| # | URL | Source Type | Doc ID | Status | Notes |
-|---|-----|-------------|--------|--------|-------|
-| 1 | <url> | Official Spec | <doc_id> | ingested | — |
-| 2 | <url> | PDF Manual | <doc_id> | ingested | — |
-| 3 | <url> | Press Review | — | failed: download error | Could not fetch page |
-| 4 | <url> | Aggregator | <doc_id> | ingesting | Still processing |
+| # | URL | Source Type | Doc Type | Doc ID | Status | Notes |
+|---|-----|-------------|----------|--------|--------|-------|
+| 1 | <url> | Official Spec | webpage | <doc_id> | ingested | — |
+| 2 | <url> | PDF Manual | pdf | <doc_id> | ingested | — |
+| 3 | <url> | Press Review | webpage | — | failed: download error | Could not fetch page |
+| 4 | <url> | Aggregator | webpage | <doc_id> | ingesting | Still processing |
 
 Summary:
 - <N> documents successfully ingested
@@ -255,7 +290,9 @@ Reply with one of:
 
 ### Stage 11 — Classify Parameters
 
-Spawn one `parameter-classifier-agent` per parameter.
+> **Non-negotiable:** The lead agent must run this stage to full completion — classifying every parameter — before stopping or presenting any summary to the user. Do not pause, stop, or yield mid-stage.
+
+Spawn `parameter-classifier-agent` agents in **batches of maximum 10 in parallel**. Wait for each batch to complete and confirm that every contract file in the batch has a populated `## Result` block before spawning the next batch. If a contract file still has an empty `## Result` block after the agent completes, re-spawn that agent for that parameter only and only if the agent crashed or encountered an error.
 
 For each agent, pass only the **absolute path to the parameter's contract file**. The agent must:
 1. Read the contract file in full — the `## Task` section already contains all required context: car identity, `resolved_trim`, `dataset_id`, parameter definition, and level criteria
@@ -270,11 +307,62 @@ For each agent, pass only the **absolute path to the parameter's contract file**
 
 ---
 
-### Stage 12 — Web Search Fallback (No-Information Parameters)
+### Stage 11b — PAUSE 3: Post-Classification Summary
 
-**Step 1 — Identify no-information parameters:** Spawn one general-purpose agent to scan all contract files in `classification-tasks/`. For each file, the agent reads the `## Result` block and checks whether `presence == "No Information Found"`. The agent returns to the lead agent a list of absolute file paths for every contract that meets this condition.
+After all Stage 11 batches complete, **write and execute a Python script inline** to parse all contract files and compute summary statistics. The script must:
+1. Parse the `## Result` JSON block from each `.md` file in `classification-tasks/`
+2. Bucket each contract: `done` (Result present, any presence value), `no_info` (presence == "No Information Found"), `failed` (Result block missing or empty — agent failure, not a classification outcome)
+3. Count presence values, classification levels, and collect names of no-info and failed parameters
 
-**Step 2 — Spawn search agents:** For each file path returned in Step 1, spawn one `parameter-searching-agent`. The agent reads the contract file and overwrites the `## Result` block with web-search findings. that's why the inputs to this agent as contract and prompt will be the same as the `parameter-classifier-agent` agent.
+Present the computed summary to the user:
+
+```
+Classification complete for <brand> <model> <model_year> <market> — <resolved_trim>
+
+Total parameters: <N>
+
+| Outcome | Count |
+|---------|-------|
+| Classified (presence confirmed) | <N> |
+| Feature absent (No) | <N> |
+| No information found | <N> |
+| Conflict / Unable to Decide | <N> |
+| Agent failure (empty Result — not classified) | <N> |
+
+Classification breakdown (where classified):
+| Level | Count |
+|-------|-------|
+| Basic | <N> |
+| Medium | <N> |
+| High | <N> |
+
+No-information parameters (<N>): <list parameter names>
+Agent failures (<N> — Result block empty): <list parameter names>
+```
+
+If there are agent failures, note: *"<N> parameters have an empty Result block. They will appear in the final output with empty/null values."*
+
+Would you like to:
+- "web fallback" — run Stage 12 web search for the <N> no-information parameters (agent failures will also be sent to web fallback)
+- "skip to results" — proceed directly to Stage 13 and aggregate current results (all parameters included, failures with empty values)
+
+**STOP. Wait for user reply before proceeding.**
+
+---
+
+### Stage 12 — Web Search Fallback (No-Information Parameters) *(optional — only if user chose "web fallback")*
+
+**Step 1 — Identify no-information parameters via inline code:** Write and execute a Python script to scan all contract files in `classification-tasks/`. The script must:
+1. For each `.md` file, extract the JSON block from the `## Result` section using a regex
+2. Classify each contract into one of three buckets:
+   - `no_info` — Result block is present and `presence == "No Information Found"`
+   - `failed` — Result block is missing or empty (agent did not write a verdict) — these are **not** no-info; flag them separately as agent failures
+   - `done` — Result block is present and `presence` is any other value
+3. Return the absolute file paths for the `no_info` bucket, the count of `failed` contracts, and summary statistics (presence breakdown, level breakdown)
+
+**Important:** Empty `## Result` blocks with empty json placeholder mean the classifier agent failed, these too should be included to be processed by the `parameter-searching-agent`
+
+**Step 2 — Spawn search agents in batches:** For each identified contract file, spawn one `parameter-searching-agent` in **batches of maximum 10 in parallel**. Wait for each batch to complete before spawning the next. The agent reads the contract file and overwrites the `## Result` block with web-search findings. The prompt format is identical to that used for `parameter-classifier-agent`.
 
 ---
 
@@ -282,7 +370,7 @@ For each agent, pass only the **absolute path to the parameter's contract file**
 
 After all agents complete:
 
-**Step 1:** Write a Python script inline and execute it to aggregate `## Result` blocks into `results.json`:
+**Step 1:** Write a Python script inline and execute it to aggregate `## Result` blocks into `results.json`. Every parameter file must produce exactly one record — files with an empty or missing Result block are included with null/empty values (never skipped). exmaple code:
 
 ```python
 import json, re
@@ -290,16 +378,52 @@ from pathlib import Path
 
 contracts_dir = Path("/mnt/user-data/workspace/classification-tasks")
 results = []
+empty_result_template = {
+    "parameter_id": None,
+    "parameter_name": None,
+    "category": None,
+    "presence": None,
+    "status": None,
+    "classification": None,
+    "confidence": None,
+    "decision_rule": None,
+    "evidence_summary": "",
+    "sources": [],
+    "inverse_retrieval_attempted": False,
+    "traceability": [],
+    "_agent_failure": True
+}
 
 for md_file in sorted(contracts_dir.glob("*.md")):
     if md_file.name == "params-frozen.csv":
         continue
     content = md_file.read_text(encoding="utf-8")
-    # Extract JSON block after ## Result
+
+    # Try to extract populated Result JSON
     match = re.search(r'## Result\s*```json\s*(\{.*?\})\s*```', content, re.DOTALL)
     if match:
-        record = json.loads(match.group(1))
-        results.append(record)
+        try:
+            record = json.loads(match.group(1))
+            # Detect empty placeholder (all fields blank/null)
+            if record.get("parameter_id") or record.get("parameter_name"):
+                results.append(record)
+                continue
+        except json.JSONDecodeError:
+            pass
+
+    # Empty or unparseable Result — extract metadata from file header and emit placeholder
+    record = dict(empty_result_template)
+    id_match = re.search(r'\*\*Internal ID:\*\*\s*(.+)', content)
+    name_match = re.search(r'^# Parameter:\s*(.+)', content, re.MULTILINE)
+    cat_match = re.search(r'\*\*Category:\*\*\s*(.+)', content)
+    if id_match:
+        record["parameter_id"] = id_match.group(1).strip()
+    if name_match:
+        record["parameter_name"] = name_match.group(1).strip()
+    if cat_match:
+        # Strip inline bold markers if present (e.g. "**ADAS**" → "ADAS")
+        record["category"] = re.sub(r'\*\*', '', cat_match.group(1)).strip()
+    results.append(record)
 
 output = {
     "run_metadata": {
@@ -307,7 +431,8 @@ output = {
         "resolved_trim": "<resolved_trim>",
         "dataset_id": "<dataset_id>",
         "date": "<YYYY-MM-DD>",
-        "total_parameters": len(results)
+        "total_parameters": len(results),
+        "agent_failures": sum(1 for r in results if r.get("_agent_failure"))
     },
     "records": results
 }
@@ -315,7 +440,7 @@ output = {
 with open("/mnt/user-data/outputs/results.json", "w", encoding="utf-8") as f:
     json.dump(output, f, indent=2, ensure_ascii=False)
 
-print(f"Aggregated {len(results)} records → results.json")
+print(f"Aggregated {len(results)} records → results.json ({output['run_metadata']['agent_failures']} agent failures included with empty values)")
 ```
 
 **Step 2:** Write and execute a second Python script to produce `results.csv` (no traceability):
@@ -333,7 +458,9 @@ with open("/mnt/user-data/outputs/results.csv", "w", newline="", encoding="utf-8
     writer = csv.DictWriter(f, fieldnames=columns, extrasaction="ignore")
     writer.writeheader()
     for record in data["records"]:
-        writer.writerow(record)
+        # Normalise None → "" so CSV cells are empty not "None"
+        row = {col: ("" if record.get(col) is None else record.get(col, "")) for col in columns}
+        writer.writerow(row)
 
 print(f"Wrote {len(data['records'])} rows → results.csv")
 ```
