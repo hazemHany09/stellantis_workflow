@@ -33,15 +33,18 @@ Example: `classification-tasks/P042-wireless-charging.md`
 | `Medium Criterion` | Level 2 row (omit if blank) |
 | `High Criterion` | Level 3 row (omit if blank) |
 
-### Full contract file template
+### Full contract file template (Python)
 
-```markdown
-# Parameter: <optimised_parameter_name>
-**Internal ID:** <parameter_id>
-**Category:** <Domain / Category>
-**Category Description:** <Category Description>
-**Category Overview:** <Category Overview>
-**Parameter Description:** <Parameter Description>
+Use this `TEMPLATE` string verbatim in the Stage 5 inline script. All `{variable}` placeholders must be substituted. JSON braces are doubled (`{{`, `}}`) to escape them from Python's `.format()`. Never omit `category_description` or `category_overview` — use an empty string if the CSV value is blank.
+
+```python
+TEMPLATE = """\
+# Parameter: {optimised_parameter_name}
+**Internal ID:** {parameter_id}
+**Category:** {category}
+**Category Description:** {category_description}
+**Category Overview:** {category_overview}
+**Parameter Description:** {parameter_description}
 
 ## Classification Levels
 
@@ -49,9 +52,7 @@ Example: `classification-tasks/P042-wireless-charging.md`
 
 | Level | Label | Description |
 |-------|-------|-------------|
-| 1 | Basic | <basic_criterion> |
-| 2 | Medium | <medium_criterion> |
-| 3 | High | <high_criterion> |
+{level_rows}
 
 <working_directory>
 You have access to the same sandbox environment as the parent agent:
@@ -64,8 +65,8 @@ You have access to the same sandbox environment as the parent agent:
 </working_directory>
 
 ## Task
-**Dataset ID:** <ragflow_dataset_id>
-**Car:** <brand> <model> <year> <market> — Full-option trim: <resolved_trim>
+**Dataset ID:** {dataset_id}
+**Car:** {brand} {model} {model_year} {market} — Full-option trim: {resolved_trim}
 
 Your task: classify this parameter for the car above using the RAGFlow knowledge base.
 
@@ -78,7 +79,7 @@ Do not output anything outside the `## Result` block. The lead reads the file, n
 
 ## Result
 ```json
-{
+{{
   "parameter_id": "",
   "parameter_name": "",
   "category": "",
@@ -89,26 +90,40 @@ Do not output anything outside the `## Result` block. The lead reads the file, n
   "decision_rule": "",
   "evidence_summary": "",
   "sources": [
-    {
+    {{
       "url": "",
       "source_type": "",
       "kind": "",
       "stance": "",
       "note": ""
-    }
+    }}
   ],
   "inverse_retrieval_attempted": false,
   "traceability": [
-    {
+    {{
       "chunk_id": "",
       "doc_id": "",
       "source_type": "",
       "quote": "",
       "kind": ""
-    }
+    }}
   ]
-}
+}}
 ```
+"""
+```
+
+Build `level_rows` by iterating the three criterion columns; omit any row where the CSV value is blank/NaN:
+
+```python
+level_labels = [("1", "Basic", row.get("Basic Criterion", "")),
+                ("2", "Medium", row.get("Medium Criterion", "")),
+                ("3", "High", row.get("High Criterion", ""))]
+level_rows = "\n".join(
+    f"| {num} | {label} | {criterion} |"
+    for num, label, criterion in level_labels
+    if criterion and str(criterion).strip() not in ("", "nan")
+)
 ```
 
 ---

@@ -118,7 +118,7 @@ At this point `brand`, `model`, `model_year`, `market`, `resolved_trim`, and `da
 
 The script must:
 1. Read `params-frozen.csv` from `/mnt/user-data/workspace/classification-tasks/params-frozen.csv`
-2. For each row (1-indexed), generate `parameter_id = f"P{i:03d}"` 
+2. For each row (1-indexed), generate `parameter_id = f"P{i:03d}"`
 3. Map CSV columns to contract fields using **exact column names**:
    - `Parameter` → `parameter_name`
    - `Domain / Category` → `category`
@@ -127,9 +127,9 @@ The script must:
    - `Parameter Description` → `parameter_description`
    - `Optimised Parameter Name` → `optimised_parameter_name`
    - `Basic Criterion`, `Medium Criterion`, `High Criterion` → level rows (omit any column that is blank/NaN)
-4. Render the full contract file using the template from `task-contracts` skill — substituting all fields above plus `brand`, `model`, `model_year`, `market`, `resolved_trim`, `dataset_id`
+4. Render each contract file using the `TEMPLATE` string and `level_rows` helper defined in the `task-contracts` skill. Load that skill now if not already loaded — it contains the exact Python template to copy into this script.
 5. Write each file to `/mnt/user-data/workspace/classification-tasks/<parameter_id>-<optimised_name_slug>.md`
-6. Leave the `## Result` block as an empty JSON placeholder
+6. Leave the `## Result` block as an empty JSON placeholder (all fields empty strings / null / false)
 7. Print a count of files written on completion
 
 Do not spawn any subagent for this step — the lead agent runs the script directly.
@@ -160,9 +160,9 @@ Update `Status` field at each stage transition. Update the `Sources` table whene
 
 ### Stage 7 — Source Discovery
 
-**Before running any searches:** Read and apply the following skills:
-1. **Serper skill** — load `serper` skill for operator knowledge, tool selection, and query construction rules.
-2. **Deep-research skill** — invoke the `deep-research`.
+**Before running any searches:** Invoke both skills via the Skill tool before running any queries — do not skip this step:
+1. **`serper-search` skill** — invoke via Skill tool; provides search operator syntax, tool selection rules, and query construction patterns.
+2. **`deep-research` skill** — invoke via Skill tool; provides deep research methodology and source evaluation guidelines.
 
 **If domains or URLs were provided by user:** Use them to scope the web search — run the queries below but restrict each search to the provided domains using `site:` operators. Do not skip web search.
 
@@ -236,9 +236,12 @@ The task prompt for each agent must include:
 **Per-source status lifecycle:**
 
 1. **Before spawning the agent:** set that source's status in `STATE.md` → `downloading`
-2. **The subagent downloads the file and triggers ingestion into RAGFlow:** once the subagent confirms the upload/ingest call was made, set status → `ingesting`
+2. **Agent returns `status: "success"`:** set status → `ingesting`, record `doc_id`
+3. **Agent returns `status: "excluded"`:** set status → `excluded: <reason>` in `STATE.md`. Do NOT add this source's `doc_id` to `STATE.md` — there is no `doc_id`. Do not proceed to ingest step for this source.
 
-Collect results: success (with `doc_id`, `source_type`, and `doc_type`) or failed (with reason) so that you can update `STATE.md` accordingly.
+Valid `excluded` reasons from the downloader agent: `access-denied`, `rate-limited`, `failed-to-download`, `upload-failed`, `missing-metadata`.
+
+After all downloader agents in a batch complete: update `STATE.md` for all results, then spawn the next batch.
 
 ---
 
@@ -292,7 +295,38 @@ Reply with one of:
 
 > **Non-negotiable:** The lead agent must run this stage to full completion — classifying every parameter — before stopping or presenting any summary to the user. Do not pause, stop, or yield mid-stage.
 
-Spawn `parameter-classifier-agent` agents in **batches of maximum 10 in parallel**. Wait for each batch to complete and confirm that every contract file in the batch has a populated `## Result` block before spawning the next batch. If a contract file still has an empty `## Result` block after the agent completes, re-spawn that agent for that parameter only and only if the agent crashed or encountered an error.
+**One agent per parameter — non-negotiable.** Each `parameter-classifier-agent` classifies exactly one parameter. Never pass multiple parameters to a single agent.
+
+**Step 1 — Find all unclassified parameters.** Run this inline Python script once before dispatching any agents:
+
+```python
+import re, json
+from pathlib import Path
+
+contracts_dir = Path("/mnt/user-data/workspace/classification-tasks")
+unclassified = []
+
+for f in sorted(contracts_dir.glob("P*.md")):
+    content = f.read_text(encoding="utf-8")
+    match = re.search(r'## Result\s*```json\s*(\{.*?\})\s*```', content, re.DOTALL)
+    if not match:
+        unclassified.append(str(f.resolve()))
+        continue
+    try:
+        result = json.loads(match.group(1))
+        if not result.get("parameter_id") and not result.get("parameter_name"):
+            unclassified.append(str(f.resolve()))
+    except (json.JSONDecodeError, ValueError):
+        unclassified.append(str(f.resolve()))
+
+print(f"Unclassified: {len(unclassified)}")
+for p in unclassified:
+    print(p)
+```
+
+**Step 2 — Batch dispatch.** Using the list above, spawn agents in batches of up to the maximum concurrent subagent limit (default 7, max 15). Wait for all agents in a batch to complete before spawning the next batch.
+
+After each batch completes, verify every contract file in the batch has a populated `## Result` block (non-empty `parameter_id`). If any block is still empty, re-spawn that agent once for that parameter only, then continue to the next batch.
 
 For each agent, pass only the **absolute path to the parameter's contract file**. The agent must:
 1. Read the contract file in full — the `## Task` section already contains all required context: car identity, `resolved_trim`, `dataset_id`, parameter definition, and level criteria
@@ -362,7 +396,7 @@ Would you like to:
 
 **Important:** Empty `## Result` blocks with empty json placeholder mean the classifier agent failed, these too should be included to be processed by the `parameter-searching-agent`
 
-**Step 2 — Spawn search agents in batches:** For each identified contract file, spawn one `parameter-searching-agent` in **batches of maximum 10 in parallel**. Wait for each batch to complete before spawning the next. The agent reads the contract file and overwrites the `## Result` block with web-search findings. The prompt format is identical to that used for `parameter-classifier-agent`.
+**Step 2 — Batch dispatch:** For each identified contract file, spawn one `parameter-searching-agent`. Use the same batch pattern as Stage 11 — dispatch up to the concurrent limit per batch, wait for all to complete, then spawn the next batch. One agent per parameter. The agent reads the contract file and overwrites the `## Result` block with web-search findings. The prompt format is identical to that used for `parameter-classifier-agent`.
 
 ---
 

@@ -30,7 +30,7 @@ Your task prompt contains:
 - `dataset_id`: the target RAGFlow dataset
 - `source_type`: the canonical source type for this document (e.g. `manufacturer_official_spec`, `third_party_press_long_form`) — provided by the lead agent; never guess or invent a value
 
-### Step 2 — Fetch the URL
+### Step 3 — Fetch the URL
 
 **Always start with `fetch_url`** regardless of file type or URL format.
 
@@ -38,22 +38,44 @@ Save to `/mnt/user-data/workspace/downloads/`.
 
 **Fetch decision tree:**
 
-1. **Call `fetch_url`** (attempt 1).
-2. **After a successful `fetch_url` response — check file size:**
-   - If the downloaded file is unusually small for a document that should have content, **read the file content** to verify it is not an access-denied or blocked response (look for markers such as "Access Denied", "403 Forbidden", "Rate Limit", "Too Many Requests", or similar error text in the body).
-   - If the content indicates **access-denied** → treat as HTTP 401/403 (go to step 3).
-   - If the content indicates **rate-limiting** → treat as rate-limited (go to step 4).
-   - Otherwise → proceed to upload.
-3. **If access denied (HTTP 401 / 403 / access-denied response or confirmed via content check):**
-   - Source is an HTML webpage → fall back to `fetch_webpage` (one attempt). If that also fails → mark as `failed-to-download`.
-   - Source is a binary file (PDF, DOCX, etc.) → mark as `failed-to-download` immediately. Do not call `fetch_webpage`.
-4. **If rate-limited or timed-out (HTTP 429 / timeout / confirmed via content check):**
-   - **Sleep 10 seconds**, then call `fetch_url` a second time (attempt 2).
-   - If attempt 2 also returns rate-limit or timeout:
-     - Source is an HTML webpage → fall back to `fetch_webpage` (one attempt). If that also fails → mark as `failed-to-download`.
-     - Source is a binary file → mark as `failed-to-download`. Do not call `fetch_webpage`.
-5. **If `fetch_webpage` fallback also fails** for any reason → mark as `failed-to-download`.
-6. **Any other error on attempt 1** → mark as `failed-to-download`.
+**Blocked-response markers** (used in every content check below): "Access Denied", "403 Forbidden", "Rate Limit", "Too Many Requests", "Captcha", "bot detection", or similar error text in the body.
+
+**Step 1 — Call `fetch_url` (attempt 1).**
+
+- **HTTP error 401 / 403** → go to [Access-Denied Handler].
+- **HTTP error 429 / timeout** → go to [Rate-Limit Handler].
+- **Any other HTTP error** → `excluded: failed-to-download`. Stop.
+- **HTTP 200 (success)** → **check the fetched content first few lines if trhe file is markdown. for binary files if the file downloaded then it's success no binary file can have a problem in its content.** for blocked-response markers:
+  - Access-denied markers found in body:
+    - Webpage → go to [Access-Denied Handler].
+  - Rate-limit markers found in body → go to [Rate-Limit Handler].
+  - Content looks valid → proceed to [Step 3 — Upload].
+
+---
+
+**[Access-Denied Handler]**
+
+- Binary file → `excluded: access-denied`. Stop.
+- Webpage → call `fetch_webpage` (one attempt):
+  - `fetch_webpage` returns an error → `excluded: failed-to-download`. Stop.
+  - `fetch_webpage` succeeds → **check returned content** for blocked-response markers:
+    - Markers found → `excluded: access-denied`. Stop. Do NOT upload.
+    - Content valid → proceed to [Step 3 — Upload].
+
+---
+
+**[Rate-Limit Handler]**
+
+- Sleep 10 seconds, then call `fetch_url` again (attempt 2).
+- **HTTP error or timeout on attempt 2** → go to fetch_webpage sub-step below.
+- **HTTP 200 on attempt 2** → **check content** for rate-limit markers:
+  - Still rate-limited → go to fetch_webpage sub-step below.
+  - Content valid → proceed to [Step 3 — Upload].
+- **fetch_webpage sub-step:**
+  - Binary file → `excluded: rate-limited`. Stop.
+  - Webpage → call `fetch_webpage` (one attempt):
+    - Returns error or rate-limit content → `excluded: rate-limited`. Stop.
+    - Content valid → proceed to [Step 3 — Upload].
 
 > **Determining source type:** A source is an HTML webpage if the URL does not end in a binary extension (`.pdf`, `.docx`, `.xlsx`, `.pptx`) and the server response (or URL path) indicates HTML content. Otherwise treat it as a binary file.
 
@@ -61,11 +83,18 @@ Save to `/mnt/user-data/workspace/downloads/`.
 
 ### Step 3 — Upload to RAGFlow
 
+**Before uploading — validate metadata.** Construct the metadata dict and verify that ALL of the following required fields are non-empty:
+- `source_type` — the canonical source type from your task (e.g. `manufacturer_official_spec`)
+- `url` — the original source URL
+- `file_type` — the doc_type determined from the fetch (`pdf`, `webpage`, `docx`, etc.)
+
+If any required field is missing or empty, **do not upload** — mark as `excluded: missing-metadata`.
+
 Use `ragflow_upload` with:
 - `path`: the saved file path (use `/mnt/user-data/workspace/downloads/...`)
 - `dataset_id`: from your task
 - `filename`: use the original filename or a clean slug from the URL
-- `metadata`: a dict that must include `source_type` plus all available document metadata — `url`, `title`, `source_type`, `file_type`, `date` (if known), and any other relevant fields. The classifier agent reads this metadata to identify source authority and provenance.
+- `metadata`: a dict containing at minimum `source_type`, `url`, `file_type`, plus all other available fields: `title`, `date` (if known), `description` (if provided in task), `doc_type`.
 
 **On upload failure:** retry once. If it fails again, mark as excluded with reason `upload-failed`.
 
@@ -86,6 +115,6 @@ Output exactly one of these JSON results in your final turn:
 {"status": "excluded", "url": "<url>", "reason": "<reason>"}
 ```
 
-Reason values: `failed-to-download`, `upload-failed`.
+Reason values: `failed-to-download`, `upload-failed`, `access-denied`, `rate-limited`, `missing-metadata`.
 
-Do not read the downloaded file's contents **except** in the two cases specified in the fetch decision tree: (1) file size is suspiciously small and you must verify it is not an access-denied response, and (2) you need to confirm a rate-limit condition from the body. In all other cases, do not read file contents.
+After every successful fetch, read enough of the downloaded content to verify it is not a blocked/error response (check for access-denied and rate-limit markers as specified above). Do not read the full file contents beyond this verification check.

@@ -68,11 +68,30 @@ Use the `dataset_id` from the `## Task` section. Follow the `retrieval-queries` 
 ### Step 5 — Apply decision rules
 Apply the decision rules from `classification-rules` skill. When assigning a classification level, use only levels listed in the `## Classification Levels` table of the contract file.
 
-### Step 6 — Write the ## Result block
+### Step 6 — Write ONLY the ## Result block
 
-Find the `## Result` section in the contract file. Replace the empty JSON template with your completed verdict. Use the exact schema defined in `classification-rules`. Do not add any content outside the JSON block.
+Using a targeted file edit (replace a specific substring, not a full file rewrite):
+- Find the `## Result` section
+- Replace **only** the JSON content between the triple-backtick fences — the block starting with `{` and ending with `}`
+- Do not modify any other part of the contract file: not the header fields, not `## Task`, not `## Classification Levels`, not any other section
 
-**Important:** Your turn output is not read by the lead. The lead reads the contract file. Write your verdict to the file — that is the only output that counts.
+The text to find and replace is the empty placeholder JSON:
+```json
+{
+  "parameter_id": "",
+  ...
+}
+```
+Replace it with your completed verdict JSON using the exact schema from `classification-rules`.
+
+**Mandatory verification — do not skip:** Immediately after writing, re-read the contract file and confirm:
+1. The `## Result` block contains your completed JSON (`parameter_id` is non-empty)
+2. The JSON is valid (no syntax errors)
+3. All other sections (`## Task`, `## Classification Levels`, header fields) are unchanged
+
+If the Result block is still empty or contains the placeholder after writing, write it again. If the file content outside `## Result` was accidentally modified, restore it from the content you read in Step 1.
+
+**Important:** Your turn output is not read by the lead. The lead reads the contract file. Writing the verdict to the file is the only output that counts.
 
 ### If the task is inside a contract file
 

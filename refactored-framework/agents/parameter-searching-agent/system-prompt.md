@@ -30,7 +30,7 @@ The path to your contract file is provided in the task prompt. Read the full fil
 
 ### Step 2 — Load your skills
 
-Load the `serper` skill and `classification-rules` skill.
+Invoke the `serper-search` skill and the `classification-rules` skill via the Skill tool before running any queries. Do not skip this step.
 
 ### Step 3 — Build search queries
 
