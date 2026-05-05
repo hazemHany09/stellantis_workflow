@@ -66,7 +66,11 @@ You have access to the same sandbox environment as the parent agent:
 
 ## Task
 **Dataset ID:** {dataset_id}
-**Car:** {brand} {model} {model_year} {market} — Full-option trim: {resolved_trim}
+**Car:** {brand} {model} {model_year} {market}
+**Body Type:** {body_type}
+**Powertrain:** {powertrain}
+**Transmission:** {transmission}
+**Full-option trim:** {resolved_trim}
 
 Your task: classify this parameter for the car above using the RAGFlow knowledge base.
 
@@ -143,7 +147,6 @@ task_tool(
 - Always inject `## Task` into the contract file **before** calling `task_tool`
 - The `prompt` must include the absolute path to the contract file
 - The agent reads the file — do not duplicate contract content in the prompt
-- For `parameter-searching-agent`: same protocol, `subagent_type="parameter-searching-agent"`, no dataset_id needed in ## Task
 - For `document-downloader-agent`: prompt includes URL + dataset_id + source_type directly (no contract file)
 
 ---
@@ -160,23 +163,10 @@ Never parse the agent's turn output string. The file is authoritative.
 
 ---
 
-## Identifying No-Information Parameters
-
-After classifier batch completes, scan all contract files:
-
-```
-no_info = [f for f in contracts if result["presence"] == "No Information Found"]
-```
-
-These are handed to `parameter-searching-agent`. The same contract file is reused — the searching agent overwrites the `## Result` block with web-search-based findings.
-
----
-
 ## Subagent Types Reference
 
 | Agent | `subagent_type` | Input |
 |-------|-----------------|-------|
-| Classifier | `parameter-classifier-agent` | Contract file path |
+| Classifier | `parameter-classifier-agent` | Contract file path(s) |
 | Downloader | `document-downloader-agent` | URL + dataset_id in prompt |
-| Searcher | `parameter-searching-agent` | Contract file path |
 | General purpose | `general-purpose` | Direct instructions |

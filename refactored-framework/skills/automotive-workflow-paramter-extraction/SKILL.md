@@ -54,7 +54,10 @@ Use these exact `source_type` values when tagging sources in `STATE.md` and in a
 | `market` | Yes | Never default or guess |
 | `parameters` | No | If omitted, use all params in params.csv |
 | `domains` / `urls` | No | If provided, scope web search to these domains via `site:` operators |
-| `resolved_trim` | No | If omitted, resolve at stage 4 |
+| `resolved_trim` | No | If omitted, resolved at stage 4 for the most premium variant in the market |
+| `body_type` | No | e.g. Sedan, SUV, Van, Pickup. If omitted, resolved at stage 4 |
+| `powertrain` | No | e.g. Gasoline, Diesel, Hybrid, Electric. If omitted, resolved at stage 4 |
+| `transmission` | No | e.g. Automatic, Manual, CVT. If omitted, resolved at stage 4 |
 
 If any required input is missing, pause and ask for only the missing field(s). Never proceed with guesses.
 
@@ -64,7 +67,7 @@ If any required input is missing, pause and ask for only the missing field(s). N
 
 ### Stage 1 — Parse Request
 
-Extract `brand`, `model`, `model_year`, `market` from the user message. Identify optional inputs: parameter list, domains/URLs, resolved trim. Confirm required fields are present before proceeding.
+Extract `brand`, `model`, `model_year`, `market` from the user message. Identify optional inputs: parameter list, domains/URLs, `resolved_trim`, `body_type`, `powertrain`, `transmission`. Record any optional car identity fields the user has already provided — they will not be resolved in Stage 4. Confirm required fields are present before proceeding.
 
 ---
 
@@ -97,16 +100,32 @@ There is no ID column — generate a sequential ID `P{row_index:03d}` (1-indexed
 
 ---
 
-### Stage 4 — Resolve Trim
+### Stage 4 — Resolve Car Details
 
-If `resolved_trim` was provided by the user: use it directly.
+For any of the four optional car identity fields not supplied by the user (`resolved_trim`, `body_type`, `powertrain`, `transmission`), resolve them now. **Always resolve all missing fields in a single research pass** — do not open separate stages per field.
 
-If not: use Serper to find the manufacturer's published full-option trim for `(brand, model, model_year, market)`. Search:
-```
-"<brand> <model> <model_year> <market> top trim full option"
-site:<brand-official-site>.com <model> <model_year> configurator
-```
-Confirm the trim name from an official source. Record it as `resolved_trim`.
+**Resolution target:** the most premium (highest-spec, most expensive) commercially available configuration of `(brand, model, model_year)` in `market`. Use this as the anchor for all unresolved fields.
+
+**If a field was already provided by the user:** use it directly — do not override it.
+
+**Resolution steps for missing fields:**
+
+1. Search for the official trim hierarchy and top configuration:
+   ```
+   "<brand> <model> <model_year>" "<market>" trims lineup specifications
+   site:<brand-official-site>.com "<model>" "<model_year>" configurator
+   "<brand> <model> <model_year>" top trim full option "<market>"
+   ```
+
+2. From the results, identify the highest-spec trim. Record:
+   - `resolved_trim` — the official name of the top trim (e.g. "Platinum Reserve", "Lounge")
+   - `body_type` — the body style of that trim (e.g. Sedan, SUV, Van, Pickup, Coupe)
+   - `powertrain` — the engine/energy type (e.g. Gasoline, Diesel, Hybrid, Plug-in Hybrid, Electric)
+   - `transmission` — the gearbox type (e.g. Automatic, Manual, CVT, Dual-Clutch)
+
+3. Confirm from an official or authoritative source. If the top trim is offered in multiple body styles or powertrains, pick the most premium variant (highest price or highest output).
+
+All four fields must be known before proceeding to Stage 5.
 
 ---
 
@@ -114,7 +133,7 @@ Confirm the trim name from an official source. Record it as `resolved_trim`.
 
 Create the `classification-tasks/` directory.
 
-At this point `brand`, `model`, `model_year`, `market`, `resolved_trim`, and `dataset_id` are all known. **Write and execute a Python script inline** to generate all contract files in a single pass — do not spawn a subagent for this step.
+At this point `brand`, `model`, `model_year`, `market`, `resolved_trim`, `body_type`, `powertrain`, `transmission`, and `dataset_id` are all known. **Write and execute a Python script inline** to generate all contract files in a single pass — do not spawn a subagent for this step.
 
 The script must:
 1. Read `params-frozen.csv` from `/mnt/user-data/workspace/classification-tasks/params-frozen.csv`
@@ -142,7 +161,11 @@ Write minimal state file to `/mnt/user-data/workspace/STATE.md`:
 
 ```markdown
 # Run State
-- **Car:** <brand> <model> <model_year> <market> — <resolved_trim>
+- **Car:** <brand> <model> <model_year> <market>
+- **Body Type:** <body_type>
+- **Powertrain:** <powertrain>
+- **Transmission:** <transmission>
+- **Full-option trim:** <resolved_trim>
 - **Date:** <YYYY-MM-DD>
 - **Dataset ID:** <ragflow_dataset_id>
 - **Parameters:** <N> total
@@ -357,7 +380,7 @@ When `params_per_agent = 1`, the prompt collapses to a single path (same format,
 
 **Step 4 — Verify after each batch.** After a batch completes, check every contract file that was assigned to that batch. For any file with a still-empty `## Result` block (non-empty `parameter_id` absent), re-spawn a single-parameter agent for that file only (effectively `params_per_agent = 1` for retries), then continue to the next batch.
 
-Each agent reads its assigned contract files in full — the `## Task` section of each file already contains all required context: car identity, `resolved_trim`, `dataset_id`, parameter definition, and level criteria. The agent applies decision rules and writes each `## Result` block in the required JSON format, including:
+Each agent reads its assigned contract files in full — the `## Task` section of each file already contains all required context: car identity, `resolved_trim`, `body_type`, `powertrain`, `transmission`, `dataset_id`, parameter definition, and level criteria. The agent applies decision rules and writes each `## Result` block in the required JSON format, including:
 - `parameter_id`, `parameter_name`, `category`
 - `presence` — whether the feature is present on the resolved trim
 - `status` — Standard / Optional / Not Available
@@ -368,68 +391,9 @@ Each agent reads its assigned contract files in full — the `## Task` section o
 
 ---
 
-### Stage 11b — PAUSE 3: Post-Classification Summary
-
-After all Stage 11 batches complete, **write and execute a Python script inline** to parse all contract files and compute summary statistics. The script must:
-1. Parse the `## Result` JSON block from each `.md` file in `classification-tasks/`
-2. Bucket each contract: `done` (Result present, any presence value), `no_info` (presence == "No Information Found"), `failed` (Result block missing or empty — agent failure, not a classification outcome)
-3. Count presence values, classification levels, and collect names of no-info and failed parameters
-
-Present the computed summary to the user:
-
-```
-Classification complete for <brand> <model> <model_year> <market> — <resolved_trim>
-
-Total parameters: <N>
-
-| Outcome | Count |
-|---------|-------|
-| Classified (presence confirmed) | <N> |
-| Feature absent (No) | <N> |
-| No information found | <N> |
-| Conflict / Unable to Decide | <N> |
-| Agent failure (empty Result — not classified) | <N> |
-
-Classification breakdown (where classified):
-| Level | Count |
-|-------|-------|
-| Basic | <N> |
-| Medium | <N> |
-| High | <N> |
-
-No-information parameters (<N>): <list parameter names>
-Agent failures (<N> — Result block empty): <list parameter names>
-```
-
-If there are agent failures, note: *"<N> parameters have an empty Result block. They will appear in the final output with empty/null values."*
-
-Would you like to:
-- "web fallback" — run Stage 12 web search for the <N> no-information parameters (agent failures will also be sent to web fallback)
-- "skip to results" — proceed directly to Stage 13 and aggregate current results (all parameters included, failures with empty values)
-
-**STOP. Wait for user reply before proceeding.**
-
----
-
-### Stage 12 — Web Search Fallback (No-Information Parameters) *(optional — only if user chose "web fallback")*
-
-**Step 1 — Identify no-information parameters via inline code:** Write and execute a Python script to scan all contract files in `classification-tasks/`. The script must:
-1. For each `.md` file, extract the JSON block from the `## Result` section using a regex
-2. Classify each contract into one of three buckets:
-   - `no_info` — Result block is present and `presence == "No Information Found"`
-   - `failed` — Result block is missing or empty (agent did not write a verdict) — these are **not** no-info; flag them separately as agent failures
-   - `done` — Result block is present and `presence` is any other value
-3. Return the absolute file paths for the `no_info` bucket, the count of `failed` contracts, and summary statistics (presence breakdown, level breakdown)
-
-**Important:** Empty `## Result` blocks with empty json placeholder mean the classifier agent failed, these too should be included to be processed by the `parameter-searching-agent`
-
-**Step 2 — Batch dispatch:** For each identified contract file, spawn one `parameter-searching-agent`. Use the same batch pattern as Stage 11 — dispatch up to the concurrent limit per batch, wait for all to complete, then spawn the next batch. One agent per parameter. The agent reads the contract file and overwrites the `## Result` block with web-search findings. The prompt format is identical to that used for `parameter-classifier-agent`.
-
----
-
 ### Stage 13 — Aggregate Results
 
-After all agents complete:
+After all Stage 11 batches complete and all contract files are verified:
 
 **Step 1:** Write a Python script inline and execute it to aggregate `## Result` blocks into `results.json`. Every parameter file must produce exactly one record — files with an empty or missing Result block are included with null/empty values (never skipped). exmaple code:
 
