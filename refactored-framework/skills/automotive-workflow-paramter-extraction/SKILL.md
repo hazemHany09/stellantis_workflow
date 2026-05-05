@@ -295,7 +295,19 @@ Reply with one of:
 
 > **Non-negotiable:** The lead agent must run this stage to full completion — classifying every parameter — before stopping or presenting any summary to the user. Do not pause, stop, or yield mid-stage.
 
-**One agent per parameter — non-negotiable.** Each `parameter-classifier-agent` classifies exactly one parameter. Never pass multiple parameters to a single agent.
+**Step 0 — Ask the user for `params_per_agent`.**
+
+Before running any code or dispatching any agents, ask:
+
+```
+How many parameters should each classifier agent handle?
+- Enter a number (e.g. 3 → one agent classifies 3 parameters sequentially)
+- Or press Enter / type "1" for the default (one agent per parameter)
+```
+
+**STOP. Wait for user reply.** Record the value as `params_per_agent` (integer, minimum 1). If the user enters nothing or "1", treat it as 1.
+
+**Configurable parameters per agent.** Group unclassified parameters into consecutive chunks of `params_per_agent` and dispatch one `parameter-classifier-agent` per chunk. Each agent classifies its assigned parameters one at a time — finishing one completely before moving to the next — and resets its 10-query retrieval budget for every new parameter.
 
 **Step 1 — Find all unclassified parameters.** Run this inline Python script once before dispatching any agents:
 
@@ -324,20 +336,35 @@ for p in unclassified:
     print(p)
 ```
 
-**Step 2 — Batch dispatch.** Using the list above, spawn agents in batches of up to the maximum concurrent subagent limit (default 7, max 15). Wait for all agents in a batch to complete before spawning the next batch.
+**Step 2 — Group into chunks.** Using `params_per_agent` (default 1), split the unclassified list into consecutive chunks:
+- `params_per_agent = 1` → one agent per parameter (original behaviour)
+- `params_per_agent = 3` → one agent per three parameters, reducing total agent count
 
-After each batch completes, verify every contract file in the batch has a populated `## Result` block (non-empty `parameter_id`). If any block is still empty, re-spawn that agent once for that parameter only, then continue to the next batch.
+**Step 3 — Batch dispatch.** Spawn agents in batches of up to the maximum concurrent subagent limit (default 7, max 15). Wait for all agents in a batch to complete before spawning the next batch.
 
-For each agent, pass only the **absolute path to the parameter's contract file**. The agent must:
-1. Read the contract file in full — the `## Task` section already contains all required context: car identity, `resolved_trim`, `dataset_id`, parameter definition, and level criteria
-2. Apply decision rules and write the `## Result` block back to the contract file in the required JSON format, including:
-   - `parameter_id`, `parameter_name`, `category`
-   - `presence` — whether the feature is present on the resolved trim
-   - `status` — Standard / Optional / Not Available
-   - `classification` — Basic / Medium / High / N/A
-   - `confidence` — Low / Medium / High
-   - `decision_rule` — which rule governed the verdict
-   - `traceability` — source URL(s) and quote(s) supporting the verdict
+For each chunk, construct the task prompt listing **all contract file paths in the chunk** in order:
+
+```
+Contract files (classify in order):
+1. /mnt/user-data/workspace/classification-tasks/<file1>.md
+2. /mnt/user-data/workspace/classification-tasks/<file2>.md
+...
+
+Classify each parameter sequentially. Complete one parameter fully (read → query KB → write ## Result) before moving to the next. Your retrieval budget resets to 10 queries for each new parameter.
+```
+
+When `params_per_agent = 1`, the prompt collapses to a single path (same format, list of one item).
+
+**Step 4 — Verify after each batch.** After a batch completes, check every contract file that was assigned to that batch. For any file with a still-empty `## Result` block (non-empty `parameter_id` absent), re-spawn a single-parameter agent for that file only (effectively `params_per_agent = 1` for retries), then continue to the next batch.
+
+Each agent reads its assigned contract files in full — the `## Task` section of each file already contains all required context: car identity, `resolved_trim`, `dataset_id`, parameter definition, and level criteria. The agent applies decision rules and writes each `## Result` block in the required JSON format, including:
+- `parameter_id`, `parameter_name`, `category`
+- `presence` — whether the feature is present on the resolved trim
+- `status` — Standard / Optional / Not Available
+- `classification` — Basic / Medium / High / N/A
+- `confidence` — Low / Medium / High
+- `decision_rule` — which rule governed the verdict
+- `traceability` — source URL(s) and quote(s) supporting the verdict
 
 ---
 
