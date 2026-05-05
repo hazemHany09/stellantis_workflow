@@ -383,9 +383,8 @@ When `params_per_agent = 1`, the prompt collapses to a single path (same format,
 Each agent reads its assigned contract files in full — the `## Task` section of each file already contains all required context: car identity, `resolved_trim`, `body_type`, `powertrain`, `transmission`, `dataset_id`, parameter definition, and level criteria. The agent applies decision rules and writes each `## Result` block in the required JSON format, including:
 - `parameter_id`, `parameter_name`, `category`
 - `presence` — whether the feature is present on the resolved trim
-- `status` — Standard / Optional / Not Available
-- `classification` — Basic / Medium / High / N/A
-- `confidence` — Low / Medium / High
+- `classification` — Basic / Medium / High / Not Present / Conflict / Unable to Decide / No Information Found / Didn't Meet Lowest Level
+- `confidence` — consensus / single-source / vague-only / silent-all
 - `decision_rule` — which rule governed the verdict
 - `traceability` — source URL(s) and quote(s) supporting the verdict
 
@@ -408,7 +407,6 @@ empty_result_template = {
     "parameter_name": None,
     "category": None,
     "presence": None,
-    "status": None,
     "classification": None,
     "confidence": None,
     "decision_rule": None,
@@ -477,7 +475,7 @@ from pathlib import Path
 with open("/mnt/user-data/outputs/results.json", encoding="utf-8") as f:
     data = json.load(f)
 
-columns = ["parameter_id", "parameter_name", "category", "presence", "status", "classification", "confidence", "decision_rule"]
+columns = ["parameter_id", "parameter_name", "category", "presence", "classification", "confidence", "decision_rule"]
 
 with open("/mnt/user-data/outputs/results.csv", "w", newline="", encoding="utf-8") as f:
     writer = csv.DictWriter(f, fieldnames=columns, extrasaction="ignore")

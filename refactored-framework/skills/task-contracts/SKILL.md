@@ -88,7 +88,6 @@ Do not output anything outside the `## Result` block. The lead reads the file, n
   "parameter_name": "",
   "category": "",
   "presence": "",
-  "status": "",
   "classification": null,
   "confidence": "",
   "decision_rule": "",

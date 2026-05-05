@@ -65,8 +65,8 @@ site:<brand-official-site> "<model> <model_year>" "<feature_name>" specification
 
 For each search result, assess whether the snippet or page provides clear, vague, or silent evidence for this parameter. Apply classification rules from `classification-rules` skill:
 - Use `source_type` based on the website (manufacturer site → `manufacturer_official_spec`, etc.)
-- Apply the five decision rules
-- Assign `presence`, `status`, `classification`, `confidence`, `decision_rule`
+- Apply the decision rules
+- Assign `presence`, `classification`, `confidence`, `decision_rule`
 
 If evidence is ambiguous: prefer the most conservative (lower) level. Do not upgrade without clear evidence.
 
