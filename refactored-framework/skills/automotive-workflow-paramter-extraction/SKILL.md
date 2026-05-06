@@ -247,24 +247,26 @@ On approval: parse the reply for removals or additions. Update the candidate lis
 
 ### Stage 9 — Download and Ingest
 
-Spawn `document-downloader-agent` agents in **batches of maximum 5 in parallel**. Wait for each batch to complete before spawning the next batch.
+Group all approved sources into batches of up to **5 files each**. Spawn one `document-downloader-agent` per batch (each agent receives its batch as a list of files). Spawn batches **in parallel** (up to the concurrent subagent limit). Wait for all agents in a batch round to complete before spawning the next round.
 
-The task prompt for each agent must include:
+The task prompt for each agent must include a `files` list. Each entry in the list must contain:
 - `url`: the source URL to download
 - `dataset_id`: the RAGFlow dataset ID for this run
 - `source_type`: the canonical source type value for this URL (taken from the `source_type` column in the `## Sources` table in `STATE.md`) — classifier agents will read this directly from `STATE.md` using the `doc_id` returned after ingestion.
 - `doc_type`: the document type (`pdf`, `webpage`, `docx`, etc.) from the `doc_type` column in `STATE.md`
 - All other metadata about the source.
 
+the Agent does **not** wait for ingestion to finish; it only triggers ingestion and moves on. The agent returns a JSON array with one result object per file.
+
 **Per-source status lifecycle:**
 
-1. **Before spawning the agent:** set that source's status in `STATE.md` → `downloading`
-2. **Agent returns `status: "success"`:** set status → `ingesting`, record `doc_id`
-3. **Agent returns `status: "excluded"`:** set status → `excluded: <reason>` in `STATE.md`. Do NOT add this source's `doc_id` to `STATE.md` — there is no `doc_id`. Do not proceed to ingest step for this source.
+1. **Before spawning the agent:** set each source's status in `STATE.md` → `downloading`
+2. **Agent result `status: "success"` for a URL:** set status → `ingesting`, record `doc_id`
+3. **Agent result `status: "excluded"` for a URL:** set status → `excluded: <reason>` in `STATE.md`. Do NOT add a `doc_id` — there is none. Do not proceed to ingest step for this source.
 
 Valid `excluded` reasons from the downloader agent: `access-denied`, `rate-limited`, `failed-to-download`, `upload-failed`, `missing-metadata`.
 
-After all downloader agents in a batch complete: update `STATE.md` for all results, then spawn the next batch.
+After all agents in a round complete: update `STATE.md` for all results, then spawn the next round.
 
 ---
 
