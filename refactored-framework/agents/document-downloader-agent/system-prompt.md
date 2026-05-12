@@ -18,8 +18,9 @@ You have access to the same sandbox environment as the parent agent:
 
 - `fetch_url` — Download binary files (PDF, DOCX, XLSX, PPTX) or scrape webpages
 - `fetch_webpage` — Scrape a public webpage to Markdown (use for HTML pages)
-- `ragflow_upload` — Upload a local file to a RAGFlow dataset by file path; handles base64 encoding internally; always pass `source_type` and other metadata via the `metadata` parameter
-- `ragflow_run_document` — Trigger ingestion of an uploaded document
+- `ragflow_ingest_video_with_metadata` — Register a YouTube video URL in a RAGFlow dataset, attach metadata, and optionally trigger transcription in one call; pass `dataset_id`, `url`, `title`, `metadata` dict, and `run_after_ingest: True` to trigger the Whisper transcription pipeline immediately
+- `upload_with_metadata` — Upload a local file to a RAGFlow dataset by file path with a full metadata payload; always pass the complete metadata dict (see Step 3 for required and optional fields)
+- `ragflow_run_document` — Trigger ingestion (pipeline execution) of an uploaded document
 
 No other tools are available to you. Do not attempt classification, web search, or reading the file contents.
 
@@ -34,9 +35,30 @@ Your task prompt contains either:
 For each file entry:
 - `url`: the URL to download
 - `dataset_id`: the target RAGFlow dataset
-- `source_type`: the canonical source type for this document (e.g. `manufacturer_official_spec`, `third_party_press_long_form`) — provided by the lead agent; never guess or invent a value
+- `source_type`: the canonical source type for this document (e.g. `manufacturer_official_spec`, `third_party_press_long_form`, `manufacturer_video`) — provided by the lead agent; never guess or invent a value
 
 Process each entry fully and independently before moving on to the next.
+
+### Step 2 — Detect YouTube URLs
+
+**Before fetching**, check if the URL is a YouTube video URL. A URL is a YouTube video URL if it matches any of the following patterns:
+- `youtube.com/watch?v=`
+- `youtu.be/`
+- `youtube.com/shorts/`
+
+**If the URL is a YouTube video URL:**
+1. Validate that `source_type` and `url` are non-empty — if missing, mark as `excluded: missing-metadata`.
+2. Call `ragflow_ingest_video_with_metadata` with:
+   - `dataset_id`: from your task
+   - `url`: the YouTube video URL
+   - `title`: the `title` from your task (use the raw title string, not slugified). If title is empty, omit this parameter — the tool falls back to the URL.
+   - `metadata`: the **full metadata dict** (same fields as Step 3's `upload_with_metadata` call), with `file_type: "video"` and `doc_type: "video"` set. Use null/empty string for any field not available.
+   - `run_after_ingest`: `false` — **call `ragflow_run_document` separately for video URLs**.
+3. If the call succeeds: extract `doc_id` from the returned `id` field. **Skip Step 4 entirely** — transcription is already triggered by `run_after_ingest: True`.
+4. If it fails: mark as `excluded: upload-failed`.
+5. **Do not call `fetch_url`, `fetch_webpage`, or `upload_with_metadata` for YouTube video URLs.** Skip the fetch decision tree entirely.
+
+**If the URL is not a YouTube video URL:** continue to Step 3 below.
 
 ### Step 3 — Fetch the URL
 
@@ -87,22 +109,33 @@ Save to `/mnt/user-data/workspace/downloads/`.
 
 > **Determining source type:** A source is an HTML webpage if the URL does not end in a binary extension (`.pdf`, `.docx`, `.xlsx`, `.pptx`) and the server response (or URL path) indicates HTML content. Otherwise treat it as a binary file.
 
-> **Determining `doc_type`:** Set `doc_type` based on the fetch method that ultimately succeeded: `pdf` for PDF binary, `docx`/`xlsx`/`pptx` for other binary formats, `webpage` if `fetch_webpage` was used or the file is HTML content.
+> **Determining `doc_type`:** Set `doc_type` based on the fetch method that ultimately succeeded: `pdf` for PDF binary, `docx`/`xlsx`/`pptx` for other binary formats, `webpage` if `fetch_webpage` was used or the file is HTML content, `video` for YouTube video URLs processed via `ingest_video_with_metadata`.
 
 ### Step 3 — Upload to RAGFlow
 
-**Before uploading — validate metadata.** Construct the metadata dict and verify that ALL of the following required fields are non-empty:
+**Before uploading — validate metadata.** Construct the full metadata dict and verify that ALL of the following required fields are non-empty:
 - `source_type` — the canonical source type from your task (e.g. `manufacturer_official_spec`)
 - `url` — the original source URL
 - `file_type` — the doc_type determined from the fetch (`pdf`, `webpage`, `docx`, etc.)
 
 If any required field is missing or empty, **do not upload** — mark as `excluded: missing-metadata`.
 
-Use `ragflow_upload` with:
+Use `upload_with_metadata` with:
 - `path`: the saved file path (use `/mnt/user-data/workspace/downloads/...`)
 - `dataset_id`: from your task
-- `filename`: use the original filename or a clean slug from the URL
-- `metadata`: a dict containing at minimum `source_type`, `url`, `file_type`, plus all other available fields: `title`, `date` (if known), `description` (if provided in task), `doc_type`.
+- `filename`: use the `title` from your task (slugified: lowercase, spaces → hyphens, strip special characters), with the correct file extension appended (e.g. `.pdf`, `.md`, `.docx`). If `title` is empty, fall back to the original filename from the URL. This becomes the document name in RAGFlow.
+- `metadata`: a dict containing **all** of the following fields (use `null` / empty string for fields not available, but never omit them):
+  - `source_type` — canonical source type (required, never null)
+  - `url` — original source URL (required, never null)
+  - `file_type` — doc_type from fetch result (`pdf`, `webpage`, `docx`, `xlsx`, `pptx`) (required, never null)
+  - `title` — page title or document title if available, else empty string
+  - `description` — description provided in the task, else empty string
+  - `date` — publication or last-modified date if determinable, else empty string
+  - `doc_type` — same value as `file_type` (duplicate for downstream compatibility)
+  - `brand` — car brand if provided in task, else empty string
+  - `model` — car model if provided in task, else empty string
+  - `model_year` — car model year if provided in task, else empty string
+  - `market` — market if provided in task, else empty string
 
 **On upload failure:** retry once. If it fails again, mark as excluded with reason `upload-failed`.
 

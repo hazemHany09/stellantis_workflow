@@ -18,9 +18,9 @@ description: this skill is invoked by the lead agent to have a multi stages work
 | `manufacturer_official_spec` | OEM build-and-price, configurator, brochure, press kit | Trim availability, standard vs optional |
 | `manufacturer_owner_manual` | Owner's manual, user guide | How the feature works; rarely authoritative for trim availability |
 | `dealer_fleet_guide` | Fleet/dealer order guide | Standard vs optional matrix per trim |
-| `third_party_press_long_form` | Long-form reviews (MotorTrend, Car and Driver, etc.) | Real-world behaviour, performance |
+| `third_party_press_long_form` | Long-form reviews (MotorTrend, Car and Driver, etc.) — including press/review YouTube channels | Real-world behaviour, performance |
 | `third_party_aggregator` | Edmunds, KBB, Cars.com | Trim availability matrices |
-| `manufacturer_video` | OEM YouTube walkthroughs | How the feature works |
+| `manufacturer_video` | OEM YouTube channel walkthroughs and demo videos | How the feature works |
 | `forum_or_ugc` | Owner forums, Reddit | Soft signal only — never sole authority for a Success verdict |
 
 Use these exact `source_type` values when tagging sources in `STATE.md` and in all contract file evidence blocks. Never invent new values.
@@ -52,8 +52,8 @@ Use these exact `source_type` values when tagging sources in `STATE.md` and in a
 | `model` | Yes | Never default or guess |
 | `model_year` | Yes | Never default or guess |
 | `market` | Yes | Never default or guess |
-| `parameters` | No | If omitted, use all params in params.csv |
-| `domains` / `urls` | No | If provided, scope web search to these domains via `site:` operators |
+| `parameters` | No | If omitted, use all params in params.csv. Can be a list of **parameter names** OR a list of **category names** (matching `Domain / Category` column) — if category names are given, all parameters belonging to those categories are included. Parameters not in the active set are excluded and written as N/A in the final output. |
+| `domains` / `urls` | No | If provided, scope web search to these domains via `site:` operators. YouTube channel URLs (e.g. `youtube.com/@BrandChannel`, `@ChannelHandle`) are also accepted — the lead agent will search those channels for relevant videos and include them in the source candidate list. |
 | `resolved_trim` | No | If omitted, resolved at stage 4 for the most premium variant in the market |
 | `body_type` | No | e.g. Sedan, SUV, Van, Pickup. If omitted, resolved at stage 4 |
 | `powertrain` | No | e.g. Gasoline, Diesel, Hybrid, Electric. If omitted, resolved at stage 4 |
@@ -69,18 +69,45 @@ If any required input is missing, pause and ask for only the missing field(s). N
 
 Extract `brand`, `model`, `model_year`, `market` from the user message. Identify optional inputs: parameter list, domains/URLs, `resolved_trim`, `body_type`, `powertrain`, `transmission`. Record any optional car identity fields the user has already provided — they will not be resolved in Stage 4. Confirm required fields are present before proceeding.
 
+**Parameter / category selection (if the user provided a subset):**
+
+1. **Determine selection mode:**
+   - If the user provided names that match entries in the `Parameter` column of params.csv or doesn't have the same meaning → drop them their values at the end in precedence, classification, or other fields will be N/A.
+   - If the user provided names that match entries in the `Domain / Category` column of params.csv or doesn't have the same meaning → don't account for them, and if that means no parameter needs classification then tell this to the user and don't continue.
+   - If the user provided a mix, treat each name by whichever column it matches.
+
+2. **Identify active vs excluded parameters:**
+   - `active_parameters` = all parameters that match the user's selection.
+   - `excluded_parameters` = all remaining parameters in params.csv that are NOT in `active_parameters`.
+   - Record both lists. Excluded parameters will receive N/A values in the final output and do not go through the classification loop.
+   - both will be part of the final Json and CSV the excluded will have N/As in all of its fields.
+
+3. **If no subset was provided:** all parameters are active; there are no excluded parameters.
+
 ---
 
-### Stage 2 — Create RAGFlow Dataset
+### Stage 2 — (Reserved)
 
-Create a RAGFlow dataset (knowledge base) for this run. Save the `dataset_id`.
+Dataset creation is deferred to after Stage 4, when all car identity fields are resolved and the full dataset name can be constructed. Continue to Stage 3.
 
 ---
 
 ### Stage 3 — Freeze Parameters
 
-If the user specified parameters explicitly: use that list.
-If not: copy `params.csv` to `classification-tasks/params-frozen.csv`. This is the authoritative reference for the run — do not modify it after this point.
+**If the user provided no subset:** copy `params.csv` in full to `classification-tasks/params-frozen.csv`. All parameters are active.
+
+**If the user provided a subset (parameter names or category names):**
+1. Filter params.csv to the `active_parameters` list resolved in Stage 1.
+2. `classification-tasks/params-frozen.csv` should be the one that has all the parameters. you only keep track of the parameter using the active_parameters and excluded_parameterts..
+3. Write the **excluded** parameters (from `excluded_parameters` in Stage 1) to `classification-tasks/excluded-params.json` as a JSON array of objects, each containing at minimum `parameter_id` (generated as `P{row_index:03d}` from the original full params.csv row index), `parameter_name` (from `Parameter` column), and `category` (from `Domain / Category` column). Example:
+   ```json
+   [
+     {"parameter_id": "P004", "parameter_name": "Adaptive Cruise Control", "category": "ADAS"},
+     {"parameter_id": "P007", "parameter_name": "Parking Sensors", "category": "Safety"}
+   ]
+   ```
+
+`params-frozen.csv` is the authoritative reference for the classification run — do not modify it after this point.
 
 **CSV column schema (exact column names):**
 
@@ -108,14 +135,23 @@ For any of the four optional car identity fields not supplied by the user (`reso
 
 **If a field was already provided by the user:** use it directly — do not override it.
 
+**Tool to use in this stage: `tavily_search`**
+
+Use `tavily_search` to answer direct factual questions about the car configuration. This tool is available **only in this stage** — do not use it anywhere else in the workflow (Stage 7 onwards uses Serper for source discovery).
+
+```
+tavily_search(query="What is the most premium trim of the <brand> <model> <model_year> in <market>?", search_depth="basic")
+tavily_search(query="<brand> <model> <model_year> top trim body type powertrain transmission <market>", search_depth="basic")
+```
+
+Run as many `tavily_search` calls as needed to resolve all missing fields in one pass. Use `search_depth="advanced"` if basic results are ambiguous.
+
 **Resolution steps for missing fields:**
 
-1. Search for the official trim hierarchy and top configuration:
-   ```
-   "<brand> <model> <model_year>" "<market>" trims lineup specifications
-   site:<brand-official-site>.com "<model>" "<model_year>" configurator
-   "<brand> <model> <model_year>" top trim full option "<market>"
-   ```
+1. Use `tavily_search` to find the official trim hierarchy and top configuration. Formulate direct questions such as:
+   - "What is the highest trim level for the <brand> <model> <model_year> in <market>?"
+   - "What body type and powertrain does the <brand> <model> <model_year> <candidate_trim> come in?"
+   - "What transmission does the <brand> <model> <model_year> <candidate_trim> use?"
 
 2. From the results, identify the highest-spec trim. Record:
    - `resolved_trim` — the official name of the top trim (e.g. "Platinum Reserve", "Lounge")
@@ -125,7 +161,17 @@ For any of the four optional car identity fields not supplied by the user (`reso
 
 3. Confirm from an official or authoritative source. If the top trim is offered in multiple body styles or powertrains, pick the most premium variant (highest price or highest output).
 
-All four fields must be known before proceeding to Stage 5.
+All four fields must be known before proceeding.
+
+**Create the RAGFlow dataset here**, now that all car identity fields are resolved.
+
+Dataset name = concatenation of all car identity fields in this order, separated by spaces:
+```
+{brand} {model} {model_year} {market} {resolved_trim} {body_type} {powertrain} {transmission}
+```
+Example: `Toyota Camry 2024 USA Platinum Sedan Hybrid Automatic`
+
+Do not include `parameters`, `domains`, or `urls` in the dataset name — only the fields that identify the car. Save the returned `dataset_id` for all subsequent stages.
 
 ---
 
@@ -168,16 +214,17 @@ Write minimal state file to `/mnt/user-data/workspace/STATE.md`:
 - **Full-option trim:** <resolved_trim>
 - **Date:** <YYYY-MM-DD>
 - **Dataset ID:** <ragflow_dataset_id>
-- **Parameters:** <N> total
+- **Parameters (active):** <N> total
+- **Parameters (excluded):** <M> excluded — see `classification-tasks/excluded-params.json`
 - **Classification tasks:** `classification-tasks/`
 - **Status:** source-discovery
 
 ## Sources
-| # | URL | source_type | doc_type | description | doc_id | status |
-|---|-----|-------------|----------|-------------|--------|--------|
+| # | URL | title | source_type | doc_type | description | doc_id | status |
+|---|-----|-------|-------------|----------|-------------|--------|--------|
 ```
 
-Update `Status` field at each stage transition. Update the `Sources` table whenever a source changes state (`pending` → `approved` → `downloading` → `ingesting` → `ingested`, or `failed: <reason>` at any step).
+Update `Status` field at each stage transition. Update the `Sources` table whenever a source changes state (`pending` → `approved` → `downloading` → `ingesting` → `ingested`, or `failed: <reason>` at any step). The `title` column must be populated from Serper search result titles during Stage 7 — it is passed to the downloader agent and used as the document filename in RAGFlow.
 
 ---
 
@@ -188,6 +235,20 @@ Update `Status` field at each stage transition. Update the `Sources` table whene
 2. **`deep-research` skill** — invoke via Skill tool; provides deep research methodology and source evaluation guidelines.
 
 **If domains or URLs were provided by user:** Use them to scope the web search — run the queries below but restrict each search to the provided domains using `site:` operators. Do not skip web search.
+
+**If the provided domains include YouTube channels** (e.g. `youtube.com/@BrandChannel`, `@ChannelHandle`, or bare channel names): additionally run targeted YouTube searches via Serper to identify relevant videos from those channels. For each YouTube channel, run at minimum:
+
+```
+site:youtube.com "@<ChannelHandle>" "<brand> <model> <model_year>" review OR walthrough OR features
+site:youtube.com "@<ChannelHandle>" "<brand> <model> <model_year>" "<resolved_trim>"
+```
+
+Add discovered YouTube video URLs to the candidate list. Tag each YouTube video URL with the appropriate `source_type`:
+- OEM/manufacturer channel → `manufacturer_video`
+- Press/review channel (e.g. MotorTrend, Car and Driver YouTube) → `third_party_press_long_form`
+- All others → `third_party_press_long_form` (default for YouTube video content)
+
+Set `doc_type: video` for all YouTube video URLs in `STATE.md`.
 
 **If no domains/URLs:** Use Serper to find the most promising sources across the open web. Run at minimum:
 
@@ -201,7 +262,9 @@ Update `Status` field at each stage transition. Update the `Sources` table whene
 
 Compile a candidate URL list. Remove duplicates, paywalled pages, and forum-only sources (keep at least one forum source if nothing else is available for a category).
 
-Append each candidate as a row in the `## Sources` table in `STATE.md` with status `pending`.
+**For each candidate, record the `title` from the Serper search result** (the page/video title returned in the result snippet). If a result has no title, construct a descriptive slug from the URL and source type (e.g. `toyota-camry-2024-official-specs`). Never leave `title` empty — it is used as the document filename in RAGFlow.
+
+Append each candidate as a row in the `## Sources` table in `STATE.md` with status `pending`. Every row must have a non-empty `title`.
 
 ---
 
@@ -212,18 +275,19 @@ Present the candidate URL list to the user as a detailed table:
 ```
 Found N candidate sources for <brand> <model> <model_year> <market>:
 
-| # | URL | `source_type` | `doc_type` | Reliability Tier | Description | Coverage | Notes |
-|---|-----|--------------|-----------|-----------------|-------------|----------|-------|
-| 1 | <url> | `manufacturer_official_spec` | `webpage` | Tier 1 — Manufacturer | Official trim specifications page | Full trim options, standard vs optional | Definitive for trim availability |
-| 2 | <url> | `manufacturer_owner_manual` | `pdf` | Tier 1 — Manufacturer | Owner/press manual (PDF) | All features, detailed specs | Highest detail, may be region-specific |
-| 3 | <url> | `dealer_fleet_guide` | `pdf` | Tier 2 — Dealer | Dealer fleet order guide | Standard vs optional per trim | Confirms fitment at trim level |
-| 4 | <url> | `third_party_press_long_form` | `webpage` | Tier 3 — Editorial | Long-form review from <outlet> | Real-world feature behaviour | Corroborating signal, not definitive |
-| 5 | <url> | `third_party_aggregator` | `webpage` | Tier 4 — Third-party | Trim comparison matrix (Edmunds/KBB) | Feature availability across trims | Good for cross-trim checks |
-| 6 | <url> | `forum_or_ugc` | `webpage` | Tier 5 — Community | Owner discussion thread | Specific feature questions | Soft signal only — never sole source |
+| # | URL | Title | `source_type` | `doc_type` | Reliability Tier | Description | Coverage | Notes |
+|---|-----|-------|--------------|-----------|-----------------|-------------|----------|-------|
+| 1 | <url> | <title from Serper> | `manufacturer_official_spec` | `webpage` | Tier 1 — Manufacturer | Official trim specifications page | Full trim options, standard vs optional | Definitive for trim availability |
+| 2 | <url> | <title from Serper> | `manufacturer_owner_manual` | `pdf` | Tier 1 — Manufacturer | Owner/press manual (PDF) | All features, detailed specs | Highest detail, may be region-specific |
+| 3 | <url> | <title from Serper> | `dealer_fleet_guide` | `pdf` | Tier 2 — Dealer | Dealer fleet order guide | Standard vs optional per trim | Confirms fitment at trim level |
+| 4 | <url> | <title from Serper> | `third_party_press_long_form` | `webpage` | Tier 3 — Editorial | Long-form review from <outlet> | Real-world feature behaviour | Corroborating signal, not definitive |
+| 5 | <url> | <title from Serper> | `third_party_aggregator` | `webpage` | Tier 4 — Third-party | Trim comparison matrix (Edmunds/KBB) | Feature availability across trims | Good for cross-trim checks |
+| 6 | <url> | <title from Serper> | `forum_or_ugc` | `webpage` | Tier 5 — Community | Owner discussion thread | Specific feature questions | Soft signal only — never sole source |
 
 Column definitions:
+- **Title:** Page or video title from the Serper search result — used as the RAGFlow document filename; never leave empty
 - **`source_type`:** Canonical source type value (from the Evidence Source Types table above) — use these exact values in `STATE.md` and contract files
-- **`doc_type`:** Document format — `pdf` for binary documents, `webpage` for scraped HTML pages, `docx`/`xlsx` for other binary formats. Infer from URL extension; the downloader confirms the actual type.
+- **`doc_type`:** Document format — `pdf` for binary documents, `webpage` for scraped HTML pages, `docx`/`xlsx` for other binary formats, `video` for YouTube videos. Infer from URL extension; the downloader confirms the actual type.
 - **Reliability Tier:** Tier 1 (highest) → Tier 5 (lowest) per business domain rules
 - **Description:** What the page/document contains
 - **Coverage:** Which parameters or feature areas this source is likely to address
@@ -249,12 +313,17 @@ On approval: parse the reply for removals or additions. Update the candidate lis
 
 Group all approved sources into batches of up to **5 files each**. Spawn one `document-downloader-agent` per batch (each agent receives its batch as a list of files). Spawn batches **in parallel** (up to the concurrent subagent limit). Wait for all agents in a batch round to complete before spawning the next round.
 
-The task prompt for each agent must include a `files` list. Each entry in the list must contain:
+The task prompt for each agent must include a `files` list. Each entry in the list must contain **all** of the following fields (the downloader passes them all to `upload_with_metadata`):
 - `url`: the source URL to download
 - `dataset_id`: the RAGFlow dataset ID for this run
-- `source_type`: the canonical source type value for this URL (taken from the `source_type` column in the `## Sources` table in `STATE.md`) — classifier agents will read this directly from `STATE.md` using the `doc_id` returned after ingestion.
-- `doc_type`: the document type (`pdf`, `webpage`, `docx`, etc.) from the `doc_type` column in `STATE.md`
-- All other metadata about the source.
+- `source_type`: the canonical source type value for this URL (taken from the `source_type` column in the `## Sources` table in `STATE.md`)
+- `doc_type`: the document type (`pdf`, `webpage`, `docx`, `video`, etc.) from the `doc_type` column in `STATE.md`
+- `title`: the document title from the `title` column in `STATE.md` — never empty; used as the RAGFlow document filename
+- `description`: a short description of what the source covers (from the Sources table), else empty string
+- `brand`: car brand for this run
+- `model`: car model for this run
+- `model_year`: car model year for this run
+- `market`: market for this run
 
 the Agent does **not** wait for ingestion to finish; it only triggers ingestion and moves on. The agent returns a JSON array with one result object per file.
 
@@ -396,7 +465,7 @@ Each agent reads its assigned contract files in full — the `## Task` section o
 
 After all Stage 11 batches complete and all contract files are verified:
 
-**Step 1:** Write a Python script inline and execute it to aggregate `## Result` blocks into `results.json`. Every parameter file must produce exactly one record — files with an empty or missing Result block are included with null/empty values (never skipped). exmaple code:
+**Step 1:** Write a Python script inline and execute it to aggregate `## Result` blocks into `results.json`. Every classified parameter file must produce exactly one record — files with an empty or missing Result block are included with null/empty values (never skipped). **Excluded parameters** (those not in the classification run) are appended at the end with all classification fields set to `"N/A"` and `"_excluded": true`. Example code:
 
 ```python
 import json, re
@@ -450,6 +519,26 @@ for md_file in sorted(contracts_dir.glob("*.md")):
         record["category"] = re.sub(r'\*\*', '', cat_match.group(1)).strip()
     results.append(record)
 
+# Append excluded parameters with N/A values
+excluded_file = contracts_dir / "excluded-params.json"
+if excluded_file.exists():
+    excluded = json.loads(excluded_file.read_text(encoding="utf-8"))
+    for ep in excluded:
+        results.append({
+            "parameter_id": ep.get("parameter_id"),
+            "parameter_name": ep.get("parameter_name"),
+            "category": ep.get("category"),
+            "presence": "N/A",
+            "classification": "N/A",
+            "confidence": "N/A",
+            "decision_rule": "N/A",
+            "evidence_summary": "N/A",
+            "sources": [],
+            "inverse_retrieval_attempted": False,
+            "traceability": [],
+            "_excluded": True
+        })
+
 output = {
     "run_metadata": {
         "car": "<brand> <model> <model_year> <market>",
@@ -457,7 +546,8 @@ output = {
         "dataset_id": "<dataset_id>",
         "date": "<YYYY-MM-DD>",
         "total_parameters": len(results),
-        "agent_failures": sum(1 for r in results if r.get("_agent_failure"))
+        "agent_failures": sum(1 for r in results if r.get("_agent_failure")),
+        "excluded_parameters": sum(1 for r in results if r.get("_excluded"))
     },
     "records": results
 }
@@ -465,10 +555,10 @@ output = {
 with open("/mnt/user-data/outputs/results.json", "w", encoding="utf-8") as f:
     json.dump(output, f, indent=2, ensure_ascii=False)
 
-print(f"Aggregated {len(results)} records → results.json ({output['run_metadata']['agent_failures']} agent failures included with empty values)")
+print(f"Aggregated {len(results)} records → results.json ({output['run_metadata']['agent_failures']} agent failures, {output['run_metadata']['excluded_parameters']} excluded with N/A)")
 ```
 
-**Step 2:** Write and execute a second Python script to produce `results.csv` (no traceability):
+**Step 2:** Write and execute a second Python script to produce `results.csv` (no traceability). Excluded parameters appear with `N/A` in all classification columns:
 
 ```python
 import json, csv
@@ -483,8 +573,11 @@ with open("/mnt/user-data/outputs/results.csv", "w", newline="", encoding="utf-8
     writer = csv.DictWriter(f, fieldnames=columns, extrasaction="ignore")
     writer.writeheader()
     for record in data["records"]:
-        # Normalise None → "" so CSV cells are empty not "None"
-        row = {col: ("" if record.get(col) is None else record.get(col, "")) for col in columns}
+        # N/A values from excluded params pass through; None → "" for agent failures
+        row = {}
+        for col in columns:
+            val = record.get(col)
+            row[col] = "" if val is None else val
         writer.writerow(row)
 
 print(f"Wrote {len(data['records'])} rows → results.csv")
@@ -492,4 +585,4 @@ print(f"Wrote {len(data['records'])} rows → results.csv")
 
 **Step 3:** Verify both files exist and row counts match.
 
-Update `STATE.md` status to `complete`. Report final counts to the user.
+Update `STATE.md` status to `complete`. Report final counts to the user (classified / excluded / agent failures).
