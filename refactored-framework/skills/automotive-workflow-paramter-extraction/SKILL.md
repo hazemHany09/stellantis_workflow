@@ -58,6 +58,9 @@ Use these exact `source_type` values when tagging sources in `STATE.md` and in a
 | `body_type` | No | e.g. Sedan, SUV, Van, Pickup. If omitted, resolved at stage 4 |
 | `powertrain` | No | e.g. Gasoline, Diesel, Hybrid, Electric. If omitted, resolved at stage 4 |
 | `transmission` | No | e.g. Automatic, Manual, CVT. If omitted, resolved at stage 4 |
+| `download_agents` | No | Number of downloader agents to spawn in Stage 9. If omitted, one agent is spawned per document (maximum parallelism). |
+| `docs_per_download_agent` | No | Number of documents each downloader agent handles. If omitted, defaults to 1 (one document per agent). |
+| `params_per_agent` | No | Number of parameters each classifier agent handles in Stage 11. If omitted, defaults to 1 (one agent per parameter). Only increase if the user explicitly requests it at session start. |
 
 If any required input is missing, pause and ask for only the missing field(s). Never proceed with guesses.
 
@@ -68,6 +71,18 @@ If any required input is missing, pause and ask for only the missing field(s). N
 ### Stage 1 — Parse Request
 
 Extract `brand`, `model`, `model_year`, `market` from the user message. Identify optional inputs: parameter list, domains/URLs, `resolved_trim`, `body_type`, `powertrain`, `transmission`. Record any optional car identity fields the user has already provided — they will not be resolved in Stage 4. Confirm required fields are present before proceeding.
+
+**Session-level agent configuration (resolve here, once, before any other stage):**
+
+Capture the following session-level agent configuration from the user message. If not provided, use the listed defaults — do **not** ask for them:
+
+| Config key | Default | Meaning |
+|------------|---------|---------|
+| `download_agents` | one agent per document | How many downloader agents to spawn in Stage 9 |
+| `docs_per_download_agent` | 1 | How many documents each downloader agent handles |
+| `params_per_agent` | 1 | How many parameters each classifier agent handles in Stage 11 |
+
+Record these values now. They govern Stage 9 and Stage 11 and must not be changed mid-run.
 
 **Parameter / category selection (if the user provided a subset):**
 
@@ -270,6 +285,8 @@ Append each candidate as a row in the `## Sources` table in `STATE.md` with stat
 
 ### Stage 8 — PAUSE 1: Source Approval
 
+> **NON-NEGOTIABLE MANDATORY GATE.** The agent MUST stop here and wait for explicit user approval before touching any download or ingestion tool. There is no condition under which this pause may be skipped, auto-approved, or bypassed. No automation, inference, or assumed approval is permitted. If the user does not reply, the workflow remains stopped at this stage indefinitely.
+
 Present the candidate URL list to the user as a detailed table:
 
 ```
@@ -311,7 +328,11 @@ On approval: parse the reply for removals or additions. Update the candidate lis
 
 ### Stage 9 — Download and Ingest
 
-Group all approved sources into batches of up to **5 files each**. Spawn one `document-downloader-agent` per batch (each agent receives its batch as a list of files). Spawn batches **in parallel** (up to the concurrent subagent limit). Wait for all agents in a batch round to complete before spawning the next round.
+Use the `download_agents` and `docs_per_download_agent` values recorded in Stage 1.
+
+**Default behaviour (no user config):** Spawn one `document-downloader-agent` per approved source — maximum parallelism, one document per agent.
+
+**User-configured behaviour:** If the user specified `download_agents` and/or `docs_per_download_agent` at session start, honour those values: group approved sources into chunks of `docs_per_download_agent` and spawn at most `download_agents` agents at a time. Wait for all running agents to complete before spawning the next round.
 
 The task prompt for each agent must include a `files` list. Each entry in the list must contain **all** of the following fields (the downloader passes them all to `upload_with_metadata`):
 - `url`: the source URL to download
@@ -352,9 +373,11 @@ If no duplicates are found, skip this step silently.
 
 ### Stage 10 — PAUSE 2: Classification Go-Ahead
 
-**Step 1 — Query ingestion status:** Query RAGFlow for the current status of all documents in the dataset. For each document, update its row in `STATE.md`:
+> **NON-NEGOTIABLE MANDATORY GATE.** The agent MUST stop here and wait for explicit user confirmation before proceeding to classification. This pause cannot be skipped, auto-approved, or bypassed under any circumstance. No automation, inference, or assumed approval is permitted.
+
+**Step 1 — Query ingestion status (ONCE):** Call the ingestion-status tool **exactly one time** to retrieve the current status of all documents in the dataset. Do **not** poll or retry in a loop — a single call is all that is made regardless of how many documents are still ingesting. For each document, update its row in `STATE.md` based on the single response:
 - If RAGFlow confirms parsing complete → set status → `ingested`
-- If still processing → leave status as `ingesting`
+- If still processing → set status → `ingesting` (report as-is; do not wait)
 - If RAGFlow reports an error → set status → `failed: <reason>`
 
 **Step 2 — Present status table to the user:**
@@ -389,17 +412,7 @@ Reply with one of:
 
 > **Non-negotiable:** The lead agent must run this stage to full completion — classifying every parameter — before stopping or presenting any summary to the user. Do not pause, stop, or yield mid-stage.
 
-**Step 0 — Ask the user for `params_per_agent`.**
-
-Before running any code or dispatching any agents, ask:
-
-```
-How many parameters should each classifier agent handle?
-- Enter a number (e.g. 3 → one agent classifies 3 parameters sequentially)
-- Or press Enter / type "1" for the default (one agent per parameter)
-```
-
-**STOP. Wait for user reply.** Record the value as `params_per_agent` (integer, minimum 1). If the user enters nothing or "1", treat it as 1.
+Use the `params_per_agent` value recorded in Stage 1 (default: 1 — one agent per parameter). Do **not** ask the user again here.
 
 **Configurable parameters per agent.** Group unclassified parameters into consecutive chunks of `params_per_agent` and dispatch one `parameter-classifier-agent` per chunk. Each agent classifies its assigned parameters one at a time — finishing one completely before moving to the next — and resets its 10-query retrieval budget for every new parameter.
 
@@ -434,7 +447,7 @@ for p in unclassified:
 - `params_per_agent = 1` → one agent per parameter (original behaviour)
 - `params_per_agent = 3` → one agent per three parameters, reducing total agent count
 
-**Step 3 — Batch dispatch.** Spawn agents in batches of up to the maximum concurrent subagent limit (default 7, max 15). Wait for all agents in a batch to complete before spawning the next batch.
+**Step 3 — Batch dispatch.** Spawn agents in batches up to the maximum concurrent subagent limit. Wait for all agents in a batch to complete before spawning the next batch.
 
 For each chunk, construct the task prompt listing **all contract file paths in the chunk** in order:
 
